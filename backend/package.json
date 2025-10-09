@@ -11,6 +11,8 @@
     "test:watch": "jest --watch",
     "test-atlas": "node scripts/testAtlasConnection.js",
     "setup-atlas": "node scripts/setupAtlasDatabase.js",
+    "test-admin": "node scripts/testAdminLogin.js",
+    "fix-admin": "node scripts/fixAdminPassword.js",
     "setup-admin": "node scripts/setupAdmin.js",
     "seed-db": "node utils/seedDatabase.js"
   },

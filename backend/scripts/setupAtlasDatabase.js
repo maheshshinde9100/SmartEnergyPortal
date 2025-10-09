@@ -68,11 +68,10 @@ const setupAtlasDatabase = async () => {
 
     // 3. Create Admin User
     console.log('\n👤 Creating admin user...');
-    const adminPassword = await bcrypt.hash('Admin@123', 12);
     const adminUser = new User({
       email: 'admin@portal.com',
       mobile: '9876543210',
-      password: adminPassword,
+      password: 'Admin@123', // Let the pre-save hook handle hashing
       role: 'admin',
       isVerified: true,
       emailVerified: true,
@@ -99,7 +98,7 @@ const setupAtlasDatabase = async () => {
       {
         email: 'user1@example.com',
         mobile: '9876543211',
-        password: await bcrypt.hash('User@123', 12),
+        password: 'User@123', // Let the pre-save hook handle hashing
         role: 'user',
         isVerified: true,
         emailVerified: true,
@@ -120,7 +119,7 @@ const setupAtlasDatabase = async () => {
       {
         email: 'user2@example.com',
         mobile: '9876543212',
-        password: await bcrypt.hash('User@123', 12),
+        password: 'User@123', // Let the pre-save hook handle hashing
         role: 'user',
         isVerified: true,
         emailVerified: true,
@@ -141,7 +140,7 @@ const setupAtlasDatabase = async () => {
       {
         email: 'user3@example.com',
         mobile: '9876543213',
-        password: await bcrypt.hash('User@123', 12),
+        password: 'User@123', // Let the pre-save hook handle hashing
         role: 'user',
         isVerified: true,
         emailVerified: true,
