@@ -83,6 +83,8 @@ export const userAPI = {
   updateProfile: (data) => api.put('/users/profile', data),
   changePassword: (data) => api.post('/users/change-password', data),
   getStats: () => api.get('/users/stats'),
+  getPreferences: () => api.get('/users/preferences'),
+  updatePreferences: (data) => api.put('/users/preferences', data),
 };
 
 // Appliance API

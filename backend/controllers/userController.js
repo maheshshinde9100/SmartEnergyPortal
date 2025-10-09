@@ -24,6 +24,55 @@ export const updateProfile = async (req, res) => {
     const userId = req.user._id;
     const updates = req.body;
 
+    // Validate required fields
+    if (updates.profile) {
+      if (!updates.profile.firstName || !updates.profile.firstName.trim()) {
+        return res.status(400).json({
+          success: false,
+          message: 'First name is required'
+        });
+      }
+      if (!updates.profile.lastName || !updates.profile.lastName.trim()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Last name is required'
+        });
+      }
+    }
+
+    // Validate email format
+    if (updates.email) {
+      const emailRegex = /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/;
+      if (!emailRegex.test(updates.email)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Please enter a valid email address'
+        });
+      }
+    }
+
+    // Validate mobile format
+    if (updates.mobile) {
+      const mobileRegex = /^[6-9]\d{9}$/;
+      if (!mobileRegex.test(updates.mobile)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Please enter a valid 10-digit mobile number'
+        });
+      }
+    }
+
+    // Validate pincode format
+    if (updates.profile?.address?.pincode) {
+      const pincodeRegex = /^[1-9][0-9]{5}$/;
+      if (!pincodeRegex.test(updates.profile.address.pincode)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Please enter a valid 6-digit pincode'
+        });
+      }
+    }
+
     const user = await User.findById(userId);
     
     if (!user) {
@@ -33,24 +82,17 @@ export const updateProfile = async (req, res) => {
       });
     }
 
-    // Update profile fields
-    if (updates.profile) {
-      if (updates.profile.firstName) user.profile.firstName = updates.profile.firstName;
-      if (updates.profile.lastName) user.profile.lastName = updates.profile.lastName;
-      
-      if (updates.profile.address) {
-        if (updates.profile.address.village) user.profile.address.village = updates.profile.address.village;
-        if (updates.profile.address.city) user.profile.address.city = updates.profile.address.city;
-        if (updates.profile.address.pincode) user.profile.address.pincode = updates.profile.address.pincode;
-        if (updates.profile.address.state) user.profile.address.state = updates.profile.address.state;
-      }
-    }
+    let emailChanged = false;
+    let mobileChanged = false;
 
-    // Update email and mobile if provided
-    if (updates.email && updates.email !== user.email) {
+    // Update email if provided and different
+    if (updates.email && updates.email.toLowerCase() !== user.email) {
       // Check if email already exists
-      const existingUser = await User.findOne({ email: updates.email.toLowerCase() });
-      if (existingUser && existingUser._id.toString() !== userId) {
+      const existingUser = await User.findOne({ 
+        email: updates.email.toLowerCase(),
+        _id: { $ne: userId }
+      });
+      if (existingUser) {
         return res.status(400).json({
           success: false,
           message: 'Email is already registered'
@@ -58,12 +100,17 @@ export const updateProfile = async (req, res) => {
       }
       user.email = updates.email.toLowerCase();
       user.emailVerified = false; // Require re-verification
+      emailChanged = true;
     }
 
+    // Update mobile if provided and different
     if (updates.mobile && updates.mobile !== user.mobile) {
       // Check if mobile already exists
-      const existingUser = await User.findOne({ mobile: updates.mobile });
-      if (existingUser && existingUser._id.toString() !== userId) {
+      const existingUser = await User.findOne({ 
+        mobile: updates.mobile,
+        _id: { $ne: userId }
+      });
+      if (existingUser) {
         return res.status(400).json({
           success: false,
           message: 'Mobile number is already registered'
@@ -71,21 +118,73 @@ export const updateProfile = async (req, res) => {
       }
       user.mobile = updates.mobile;
       user.mobileVerified = false; // Require re-verification
+      mobileChanged = true;
+    }
+
+    // Update profile fields
+    if (updates.profile) {
+      if (updates.profile.firstName) {
+        user.profile.firstName = updates.profile.firstName.trim();
+      }
+      if (updates.profile.lastName) {
+        user.profile.lastName = updates.profile.lastName.trim();
+      }
+      
+      if (updates.profile.address) {
+        if (updates.profile.address.village !== undefined) {
+          user.profile.address.village = updates.profile.address.village.trim();
+        }
+        if (updates.profile.address.city !== undefined) {
+          user.profile.address.city = updates.profile.address.city.trim();
+        }
+        if (updates.profile.address.pincode !== undefined) {
+          user.profile.address.pincode = updates.profile.address.pincode.trim();
+        }
+        if (updates.profile.address.state !== undefined) {
+          user.profile.address.state = updates.profile.address.state.trim();
+        }
+      }
     }
 
     await user.save();
 
     // Remove sensitive data
-    user.password = undefined;
-    user.refreshTokens = undefined;
+    const userResponse = user.toObject();
+    delete userResponse.password;
+    delete userResponse.refreshTokens;
+
+    let message = 'Profile updated successfully';
+    if (emailChanged || mobileChanged) {
+      message += '. Please verify your ';
+      if (emailChanged && mobileChanged) {
+        message += 'email and mobile number';
+      } else if (emailChanged) {
+        message += 'email address';
+      } else {
+        message += 'mobile number';
+      }
+    }
 
     res.json({
       success: true,
-      message: 'Profile updated successfully',
-      data: { user }
+      message,
+      data: { 
+        user: userResponse,
+        requiresVerification: emailChanged || mobileChanged
+      }
     });
   } catch (error) {
     console.error('Update profile error:', error);
+    
+    // Handle validation errors
+    if (error.name === 'ValidationError') {
+      const validationErrors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        success: false,
+        message: validationErrors[0] || 'Validation failed'
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: 'Failed to update profile'
@@ -176,6 +275,87 @@ export const getUserStats = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch user statistics'
+    });
+  }
+};
+
+// Update user preferences
+export const updatePreferences = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const preferences = req.body;
+
+    const user = await User.findById(userId);
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Initialize preferences if not exists
+    if (!user.preferences) {
+      user.preferences = {};
+    }
+
+    // Update preferences
+    Object.keys(preferences).forEach(key => {
+      user.preferences[key] = preferences[key];
+    });
+
+    // Mark the preferences field as modified for Mongoose
+    user.markModified('preferences');
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Preferences updated successfully',
+      data: { preferences: user.preferences }
+    });
+  } catch (error) {
+    console.error('Update preferences error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update preferences'
+    });
+  }
+};
+
+// Get user preferences
+export const getPreferences = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const user = await User.findById(userId).select('preferences');
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Default preferences if not set
+    const defaultPreferences = {
+      emailNotifications: true,
+      smsNotifications: false,
+      monthlyReports: true,
+      energyAlerts: true,
+      language: 'en',
+      timezone: 'Asia/Kolkata'
+    };
+
+    const preferences = { ...defaultPreferences, ...user.preferences };
+
+    res.json({
+      success: true,
+      data: preferences
+    });
+  } catch (error) {
+    console.error('Get preferences error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch preferences'
     });
   }
 };

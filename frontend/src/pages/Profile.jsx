@@ -81,6 +81,12 @@ const Profile = () => {
       if (statsResponse.success) {
         setUserStats(statsResponse.data);
       }
+
+      // Fetch user preferences
+      const preferencesResponse = await userAPI.getPreferences();
+      if (preferencesResponse.success) {
+        setPreferences(preferencesResponse.data);
+      }
     } catch (error) {
       console.error('Failed to fetch profile data:', error);
       toast.error('Failed to load profile data');
@@ -120,22 +126,109 @@ const Profile = () => {
     }));
   };
 
-  const handlePreferenceChange = (key, value) => {
-    setPreferences(prev => ({
-      ...prev,
+  const handlePreferenceChange = async (key, value) => {
+    const newPreferences = {
+      ...preferences,
       [key]: value
-    }));
+    };
+    
+    setPreferences(newPreferences);
+
+    // Auto-save preferences
+    try {
+      const response = await userAPI.updatePreferences(newPreferences);
+      if (response.success) {
+        toast.success('Preferences updated successfully');
+      }
+    } catch (error) {
+      toast.error('Failed to update preferences');
+      // Revert the change on error
+      setPreferences(preferences);
+    }
+  };
+
+  const validateProfileForm = () => {
+    const errors = {};
+
+    if (!formData.firstName.trim()) {
+      errors.firstName = 'First name is required';
+    } else if (formData.firstName.length < 2) {
+      errors.firstName = 'First name must be at least 2 characters';
+    }
+
+    if (!formData.lastName.trim()) {
+      errors.lastName = 'Last name is required';
+    } else if (formData.lastName.length < 2) {
+      errors.lastName = 'Last name must be at least 2 characters';
+    }
+
+    if (!formData.email.trim()) {
+      errors.email = 'Email is required';
+    } else if (!/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(formData.email)) {
+      errors.email = 'Please enter a valid email address';
+    }
+
+    if (!formData.mobile.trim()) {
+      errors.mobile = 'Mobile number is required';
+    } else if (!/^[6-9]\d{9}$/.test(formData.mobile)) {
+      errors.mobile = 'Please enter a valid 10-digit mobile number';
+    }
+
+    if (!formData.address.village.trim()) {
+      errors.village = 'Village/Area is required';
+    }
+
+    if (!formData.address.city.trim()) {
+      errors.city = 'City is required';
+    }
+
+    if (!formData.address.pincode.trim()) {
+      errors.pincode = 'Pincode is required';
+    } else if (!/^[1-9][0-9]{5}$/.test(formData.address.pincode)) {
+      errors.pincode = 'Please enter a valid 6-digit pincode';
+    }
+
+    if (!formData.address.state.trim()) {
+      errors.state = 'State is required';
+    }
+
+    return errors;
   };
 
   const handleProfileSubmit = async (e) => {
     e.preventDefault();
+    
+    // Validate form
+    const validationErrors = validateProfileForm();
+    if (Object.keys(validationErrors).length > 0) {
+      const firstError = Object.values(validationErrors)[0];
+      toast.error(firstError);
+      return;
+    }
+
     setIsLoading(true);
 
     try {
-      const response = await userAPI.updateProfile(formData);
+      // Structure the data correctly for the backend
+      const updateData = {
+        email: formData.email.trim(),
+        mobile: formData.mobile.trim(),
+        profile: {
+          firstName: formData.firstName.trim(),
+          lastName: formData.lastName.trim(),
+          address: {
+            village: formData.address.village.trim(),
+            city: formData.address.city.trim(),
+            pincode: formData.address.pincode.trim(),
+            state: formData.address.state.trim()
+          }
+        }
+      };
+
+      const response = await userAPI.updateProfile(updateData);
       if (response.success) {
         updateUser(response.data.user);
-        toast.success('Profile updated successfully');
+        toast.success(response.message || 'Profile updated successfully');
         setIsEditing(false);
         // Refresh profile data from database
         await fetchProfileData();
@@ -147,16 +240,38 @@ const Profile = () => {
     }
   };
 
+  const validatePasswordForm = () => {
+    const errors = {};
+
+    if (!passwordData.currentPassword) {
+      errors.currentPassword = 'Current password is required';
+    }
+
+    if (!passwordData.newPassword) {
+      errors.newPassword = 'New password is required';
+    } else if (passwordData.newPassword.length < 8) {
+      errors.newPassword = 'Password must be at least 8 characters long';
+    } else if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/.test(passwordData.newPassword)) {
+      errors.newPassword = 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character';
+    }
+
+    if (!passwordData.confirmPassword) {
+      errors.confirmPassword = 'Please confirm your new password';
+    } else if (passwordData.newPassword !== passwordData.confirmPassword) {
+      errors.confirmPassword = 'Passwords do not match';
+    }
+
+    return errors;
+  };
+
   const handlePasswordSubmit = async (e) => {
     e.preventDefault();
     
-    if (passwordData.newPassword !== passwordData.confirmPassword) {
-      toast.error('New passwords do not match');
-      return;
-    }
-
-    if (passwordData.newPassword.length < 6) {
-      toast.error('Password must be at least 6 characters long');
+    // Validate form
+    const validationErrors = validatePasswordForm();
+    if (Object.keys(validationErrors).length > 0) {
+      const firstError = Object.values(validationErrors)[0];
+      toast.error(firstError);
       return;
     }
 

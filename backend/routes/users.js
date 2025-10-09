@@ -7,6 +7,8 @@ import {
   updateProfile,
   changePassword,
   getUserStats,
+  updatePreferences,
+  getPreferences,
   deleteAccount
 } from '../controllers/userController.js';
 
@@ -78,6 +80,8 @@ router.get('/profile', authenticate, getProfile);
 router.put('/profile', authenticate, profileValidation, validate, updateProfile);
 router.post('/change-password', authenticate, passwordValidation, validate, changePassword);
 router.get('/stats', authenticate, getUserStats);
+router.get('/preferences', authenticate, getPreferences);
+router.put('/preferences', authenticate, updatePreferences);
 router.delete('/account', authenticate, deleteAccountValidation, validate, deleteAccount);
 
 export default router;

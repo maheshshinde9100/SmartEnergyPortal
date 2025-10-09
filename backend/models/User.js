@@ -96,6 +96,33 @@ const userSchema = new mongoose.Schema({
   isActive: {
     type: Boolean,
     default: true
+  },
+  preferences: {
+    emailNotifications: {
+      type: Boolean,
+      default: true
+    },
+    smsNotifications: {
+      type: Boolean,
+      default: false
+    },
+    monthlyReports: {
+      type: Boolean,
+      default: true
+    },
+    energyAlerts: {
+      type: Boolean,
+      default: true
+    },
+    language: {
+      type: String,
+      enum: ['en', 'hi', 'mr'],
+      default: 'en'
+    },
+    timezone: {
+      type: String,
+      default: 'Asia/Kolkata'
+    }
   }
 }, {
   timestamps: true,
