@@ -3,11 +3,18 @@ import mongoose from 'mongoose';
 const connectDB = async () => {
   try {
     const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/smart-energy-portal';
+    const dbName = process.env.MONGODB_DB || 'smart-energy-portal';
+    
+    // Construct full URI with database name
+    const fullURI = mongoURI.includes('mongodb+srv://') 
+      ? (mongoURI.endsWith('/') ? `${mongoURI}${dbName}` : `${mongoURI}/${dbName}`)
+      : mongoURI;
     
     console.log('🔍 Attempting to connect to MongoDB...');
-    console.log('🔗 MongoDB URI:', mongoURI);
+    console.log('🔗 Database Name:', dbName);
+    console.log('🔗 MongoDB URI:', fullURI.replace(/\/\/([^:]+):([^@]+)@/, '//***:***@'));
 
-    const conn = await mongoose.connect(mongoURI);
+    const conn = await mongoose.connect(fullURI);
 
     console.log(`📦 MongoDB Connected: ${conn.connection.host}`);
     
