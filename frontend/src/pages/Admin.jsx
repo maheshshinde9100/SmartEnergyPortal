@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { 
-  Users, 
-  BarChart3, 
-  Settings, 
+import {
+  Users,
+  BarChart3,
+  Settings,
   Download,
   Search,
   Filter,
@@ -56,7 +56,7 @@ const Admin = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('all');
   const [selectedPeriod, setSelectedPeriod] = useState('6months');
-  
+
   const [adminData, setAdminData] = useState({
     overview: {
       users: { total: 0, active: 0, verified: 0, inactive: 0 },
@@ -154,7 +154,7 @@ const Admin = () => {
         },
         currentTariff: tariffRes.status === 'fulfilled' ? tariffRes.value.data : null
       });
-      
+
       setIsLoading(false);
     } catch (error) {
       console.error('Failed to fetch admin data:', error);
@@ -282,13 +282,13 @@ const Admin = () => {
     const userName = `${user.profile?.firstName || ''} ${user.profile?.lastName || ''}`.trim();
     const userEmail = user.email || '';
     const userMsebId = user.msebCustomerId || '';
-    
+
     const matchesSearch = userName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         userEmail.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         userMsebId.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesFilter = selectedFilter === 'all' || 
-                         (selectedFilter === 'active' && user.isActive) ||
-                         (selectedFilter === 'inactive' && !user.isActive);
+      userEmail.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      userMsebId.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesFilter = selectedFilter === 'all' ||
+      (selectedFilter === 'active' && user.isActive) ||
+      (selectedFilter === 'inactive' && !user.isActive);
     return matchesSearch && matchesFilter;
   });
 
@@ -339,11 +339,10 @@ const Admin = () => {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center space-x-2 py-4 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${
-                    activeTab === tab.id
-                      ? 'border-primary-500 text-primary-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700'
-                  }`}
+                  className={`flex items-center space-x-2 py-4 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${activeTab === tab.id
+                    ? 'border-primary-500 text-primary-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                    }`}
                 >
                   <Icon size={16} />
                   <span>{tab.label}</span>
@@ -436,7 +435,7 @@ const Admin = () => {
             <div className="space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <h3 className="text-lg font-semibold text-gray-900">User Management</h3>
-                
+
                 <div className="flex items-center space-x-4">
                   <div className="relative">
                     <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
@@ -448,7 +447,7 @@ const Admin = () => {
                       className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                     />
                   </div>
-                  
+
                   <select
                     value={selectedFilter}
                     onChange={(e) => setSelectedFilter(e.target.value)}
@@ -458,7 +457,7 @@ const Admin = () => {
                     <option value="active">Active</option>
                     <option value="inactive">Inactive</option>
                   </select>
-                  
+
                   <button
                     onClick={() => exportData('users')}
                     className="flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
@@ -497,11 +496,10 @@ const Admin = () => {
                             {user.msebCustomerId}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                              user.isActive 
-                                ? 'bg-green-100 text-green-800' 
-                                : 'bg-red-100 text-red-800'
-                            }`}>
+                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${user.isActive
+                              ? 'bg-green-100 text-green-800'
+                              : 'bg-red-100 text-red-800'
+                              }`}>
                               {user.isActive ? 'Active' : 'Inactive'}
                             </span>
                           </td>
@@ -579,8 +577,8 @@ const Admin = () => {
                       </div>
                       <div className="flex items-center space-x-4">
                         <div className="w-32 bg-gray-200 rounded-full h-2">
-                          <div 
-                            className="bg-primary-500 h-2 rounded-full" 
+                          <div
+                            className="bg-primary-500 h-2 rounded-full"
                             style={{ width: `${Math.min(100, (region.totalConsumption / Math.max(...(adminData.analytics?.regionalConsumption || []).map(r => r.totalConsumption), 1)) * 100)}%` }}
                           ></div>
                         </div>
@@ -692,19 +690,17 @@ const Admin = () => {
                       <span className="text-lg font-semibold text-gray-900">{adminData.predictions.confidence || 0}%</span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-3">
-                      <div 
-                        className={`h-3 rounded-full transition-all duration-500 ${
-                          (adminData.predictions.confidence || 0) >= 80 ? 'bg-green-500' :
+                      <div
+                        className={`h-3 rounded-full transition-all duration-500 ${(adminData.predictions.confidence || 0) >= 80 ? 'bg-green-500' :
                           (adminData.predictions.confidence || 0) >= 60 ? 'bg-yellow-500' : 'bg-red-500'
-                        }`}
+                          }`}
                         style={{ width: `${adminData.predictions.confidence || 0}%` }}
                       ></div>
                     </div>
                     <div className="flex items-center space-x-2">
-                      <div className={`w-3 h-3 rounded-full ${
-                        adminData.predictions.trend === 'increasing' ? 'bg-green-500' :
+                      <div className={`w-3 h-3 rounded-full ${adminData.predictions.trend === 'increasing' ? 'bg-green-500' :
                         adminData.predictions.trend === 'decreasing' ? 'bg-red-500' : 'bg-yellow-500'
-                      }`}></div>
+                        }`}></div>
                       <span className="text-sm text-gray-600">
                         Trend: <span className="font-medium capitalize">{adminData.predictions.trend || 'stable'}</span>
                       </span>
@@ -740,7 +736,7 @@ const Admin = () => {
                 <div className="bg-white border border-gray-200 rounded-xl p-6">
                   <h4 className="text-md font-semibold text-gray-900 mb-4">Historical Data & Prediction</h4>
                   <div className="h-80">
-                    <Line 
+                    <Line
                       data={{
                         labels: [
                           ...adminData.predictions.historicalData.map(item => {
@@ -874,11 +870,10 @@ const Admin = () => {
                   {(adminData.peakUsage.peakHours || []).slice(0, 8).map((hour, index) => (
                     <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                       <div className="flex items-center space-x-3">
-                        <div className={`w-3 h-3 rounded-full ${
-                          index === 0 ? 'bg-red-500' :
+                        <div className={`w-3 h-3 rounded-full ${index === 0 ? 'bg-red-500' :
                           index === 1 ? 'bg-orange-500' :
-                          index === 2 ? 'bg-yellow-500' : 'bg-gray-400'
-                        }`}></div>
+                            index === 2 ? 'bg-yellow-500' : 'bg-gray-400'
+                          }`}></div>
                         <span className="font-medium text-gray-900">{hour.hour}</span>
                         <span className="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded-full capitalize">
                           {hour.period}
@@ -886,12 +881,11 @@ const Admin = () => {
                       </div>
                       <div className="flex items-center space-x-4">
                         <div className="w-32 bg-gray-200 rounded-full h-2">
-                          <div 
-                            className={`h-2 rounded-full ${
-                              index === 0 ? 'bg-red-500' :
+                          <div
+                            className={`h-2 rounded-full ${index === 0 ? 'bg-red-500' :
                               index === 1 ? 'bg-orange-500' :
-                              index === 2 ? 'bg-yellow-500' : 'bg-gray-400'
-                            }`}
+                                index === 2 ? 'bg-yellow-500' : 'bg-gray-400'
+                              }`}
                             style={{ width: `${Math.min(100, (hour.consumption / Math.max(...(adminData.peakUsage.peakHours || []).map(h => h.consumption), 1)) * 100)}%` }}
                           ></div>
                         </div>
@@ -912,12 +906,11 @@ const Admin = () => {
                     {Object.entries(adminData.peakUsage.peakAnalysis?.byTimeOfDay || {}).map(([period, data]) => (
                       <div key={period} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                         <div className="flex items-center space-x-3">
-                          <div className={`w-4 h-4 rounded-full ${
-                            period === 'morning' ? 'bg-yellow-500' :
+                          <div className={`w-4 h-4 rounded-full ${period === 'morning' ? 'bg-yellow-500' :
                             period === 'afternoon' ? 'bg-orange-500' :
-                            period === 'evening' ? 'bg-red-500' :
-                            period === 'night' ? 'bg-blue-500' : 'bg-gray-500'
-                          }`}></div>
+                              period === 'evening' ? 'bg-red-500' :
+                                period === 'night' ? 'bg-blue-500' : 'bg-gray-500'
+                            }`}></div>
                           <div>
                             <span className="font-medium text-gray-900 capitalize">{period.replace('-', ' ')}</span>
                             <p className="text-xs text-gray-500">{data.userCount || 0} users</p>
@@ -997,7 +990,7 @@ const Admin = () => {
                     </thead>
                     <tbody className="divide-y divide-gray-200">
                       {Object.entries(adminData.peakUsage.peakAnalysis?.regionalPeakUsage || {}).map(([city, data]) => {
-                        const peakPeriod = Object.entries(data.peakTimes || {}).reduce((max, [period, usage]) => 
+                        const peakPeriod = Object.entries(data.peakTimes || {}).reduce((max, [period, usage]) =>
                           usage > max.usage ? { period, usage } : max, { period: 'evening', usage: 0 }
                         );
                         return (
@@ -1060,12 +1053,12 @@ const Admin = () => {
                           </td>
                         </tr>
                       )) || (
-                        <tr>
-                          <td colSpan="3" className="px-6 py-4 text-center text-gray-500">
-                            No tariff data available
-                          </td>
-                        </tr>
-                      )}
+                          <tr>
+                            <td colSpan="3" className="px-6 py-4 text-center text-gray-500">
+                              No tariff data available
+                            </td>
+                          </tr>
+                        )}
                     </tbody>
                   </table>
                 </div>
@@ -1077,7 +1070,7 @@ const Admin = () => {
           {activeTab === 'reports' && (
             <div className="space-y-6">
               <h3 className="text-lg font-semibold text-gray-900">System Reports</h3>
-              
+
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {[
                   { title: 'Monthly Consumption Report', desc: 'Detailed consumption analysis', icon: BarChart3, type: 'consumption' },
@@ -1267,9 +1260,8 @@ const Admin = () => {
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600">Status:</span>
-                      <span className={`px-2 py-1 text-xs rounded-full ${
-                        selectedUser.user?.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                      }`}>
+                      <span className={`px-2 py-1 text-xs rounded-full ${selectedUser.user?.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                        }`}>
                         {selectedUser.user?.isActive ? 'Active' : 'Inactive'}
                       </span>
                     </div>
