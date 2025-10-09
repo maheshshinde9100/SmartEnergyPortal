@@ -45,7 +45,7 @@ api.interceptors.response.use(
             const { accessToken, refreshToken: newRefreshToken } = response.data.data;
             localStorage.setItem('accessToken', accessToken);
             localStorage.setItem('refreshToken', newRefreshToken);
-            
+
             // Retry original request with new token
             originalRequest.headers.Authorization = `Bearer ${accessToken}`;
             return api(originalRequest);
@@ -108,6 +108,11 @@ export const analyticsAPI = {
   getTrends: (params) => api.get('/analytics/trends', { params }),
   getPeakHours: (params) => api.get('/analytics/peak-hours', { params }),
   getComparisons: (params) => api.get('/analytics/comparisons', { params }),
+};
+
+// Dashboard API
+export const dashboardAPI = {
+  getData: () => api.get('/dashboard'),
 };
 
 // Admin API

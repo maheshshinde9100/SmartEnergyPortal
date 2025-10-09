@@ -21,12 +21,6 @@ const Sidebar = () => {
       description: 'Overview and quick stats'
     },
     {
-      name: 'Appliances',
-      href: '/appliances',
-      icon: Zap,
-      description: 'Manage your appliances'
-    },
-    {
       name: 'Profile',
       href: '/profile',
       icon: User,
@@ -34,9 +28,19 @@ const Sidebar = () => {
     }
   ];
 
+  // Add user-specific links (non-admin users only)
+  if (user?.role !== 'admin') {
+    navigationItems.splice(1, 0, {
+      name: 'Appliances',
+      href: '/appliances',
+      icon: Zap,
+      description: 'Manage your appliances'
+    });
+  }
+
   // Add admin-only links
   if (user?.role === 'admin') {
-    navigationItems.splice(2, 0, {
+    navigationItems.splice(1, 0, {
       name: 'Analytics',
       href: '/analytics',
       icon: BarChart3,

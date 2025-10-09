@@ -10,7 +10,7 @@ export const getProfile = async (req, res) => {
       data: req.user
     });
   } catch (error) {
-    console.error('Get profile error:', error);
+    // Get profile error
     res.status(500).json({
       success: false,
       message: 'Failed to fetch profile'
@@ -174,7 +174,7 @@ export const updateProfile = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Update profile error:', error);
+    // Update profile error
     
     // Handle validation errors
     if (error.name === 'ValidationError') {
@@ -225,7 +225,7 @@ export const changePassword = async (req, res) => {
       message: 'Password changed successfully'
     });
   } catch (error) {
-    console.error('Change password error:', error);
+    // Change password error
     res.status(500).json({
       success: false,
       message: 'Failed to change password'
@@ -238,32 +238,93 @@ export const getUserStats = async (req, res) => {
   try {
     const userId = req.user._id;
 
-    // Get consumption records count
-    const totalConsumptionRecords = await Consumption.countDocuments({ userId });
+    // Get consumption records count and data
+    const consumptionRecords = await Consumption.find({ userId }).select('totalUnits estimatedBill month year createdAt');
+    const totalConsumptionRecords = consumptionRecords.length;
     
-    // Get average monthly consumption
-    const consumptionData = await Consumption.find({ userId }).select('totalUnits');
-    const averageMonthlyConsumption = consumptionData.length > 0 
-      ? consumptionData.reduce((sum, record) => sum + record.totalUnits, 0) / consumptionData.length 
+    // Calculate total and average consumption
+    const totalConsumption = consumptionRecords.reduce((sum, record) => sum + (record.totalUnits || 0), 0);
+    const averageMonthlyConsumption = totalConsumptionRecords > 0 
+      ? totalConsumption / totalConsumptionRecords 
       : 0;
     
-    // Get custom appliances count
-    const totalCustomAppliances = await Appliance.countDocuments({ createdBy: userId, isCustom: true });
+    // Calculate total bill amount
+    const totalBillAmount = consumptionRecords.reduce((sum, record) => sum + (record.estimatedBill || 0), 0);
+    const averageMonthlyBill = totalConsumptionRecords > 0 
+      ? totalBillAmount / totalConsumptionRecords 
+      : 0;
     
-    // Calculate account age
+    // Get user's appliances count (all appliances are user-created now)
+    const totalUserAppliances = await Appliance.countDocuments({ 
+      createdBy: userId, 
+      isActive: true 
+    });
+    
+    // Calculate account age in days
     const accountAge = Math.floor((Date.now() - new Date(req.user.createdAt)) / (1000 * 60 * 60 * 24));
+    
+    // Get latest consumption record
+    const latestConsumption = consumptionRecords.length > 0 
+      ? consumptionRecords.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0]
+      : null;
+
+    // Calculate consumption trend (last 3 months vs previous 3 months)
+    let consumptionTrend = 'stable';
+    if (consumptionRecords.length >= 6) {
+      const sortedRecords = consumptionRecords.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      const recent3Months = sortedRecords.slice(0, 3);
+      const previous3Months = sortedRecords.slice(3, 6);
+      
+      const recentAvg = recent3Months.reduce((sum, r) => sum + r.totalUnits, 0) / 3;
+      const previousAvg = previous3Months.reduce((sum, r) => sum + r.totalUnits, 0) / 3;
+      
+      const changePercent = ((recentAvg - previousAvg) / previousAvg) * 100;
+      
+      if (changePercent > 10) consumptionTrend = 'increasing';
+      else if (changePercent < -10) consumptionTrend = 'decreasing';
+      else consumptionTrend = 'stable';
+    }
 
     const stats = {
+      // Consumption Statistics
       totalConsumptionRecords,
-      averageMonthlyConsumption: Math.round(averageMonthlyConsumption * 10) / 10,
-      totalCustomAppliances,
+      totalConsumption: Math.round(totalConsumption * 100) / 100,
+      averageMonthlyConsumption: Math.round(averageMonthlyConsumption * 100) / 100,
+      
+      // Billing Statistics
+      totalBillAmount: Math.round(totalBillAmount * 100) / 100,
+      averageMonthlyBill: Math.round(averageMonthlyBill * 100) / 100,
+      
+      // Appliance Statistics
+      totalUserAppliances,
+      
+      // Account Information
       accountAge,
-      lastLogin: req.user.lastLogin || new Date(),
+      lastLogin: req.user.lastLogin || req.user.createdAt,
+      
+      // Latest Activity
+      latestConsumption: latestConsumption ? {
+        month: latestConsumption.month,
+        year: latestConsumption.year,
+        units: latestConsumption.totalUnits,
+        bill: latestConsumption.estimatedBill,
+        date: latestConsumption.createdAt
+      } : null,
+      
+      // Trends
+      consumptionTrend,
+      
+      // Verification Status
       verificationStatus: {
         email: req.user.emailVerified || false,
         mobile: req.user.mobileVerified || false,
-        profile: true
-      }
+        profile: !!(req.user.profile?.firstName && req.user.profile?.lastName)
+      },
+      
+      // Activity Summary
+      hasConsumptionData: totalConsumptionRecords > 0,
+      hasAppliances: totalUserAppliances > 0,
+      isActiveUser: totalConsumptionRecords > 0 || totalUserAppliances > 0
     };
 
     res.json({
@@ -271,7 +332,7 @@ export const getUserStats = async (req, res) => {
       data: stats
     });
   } catch (error) {
-    console.error('Get user stats error:', error);
+    // Get user stats error
     res.status(500).json({
       success: false,
       message: 'Failed to fetch user statistics'
@@ -314,7 +375,7 @@ export const updatePreferences = async (req, res) => {
       data: { preferences: user.preferences }
     });
   } catch (error) {
-    console.error('Update preferences error:', error);
+    // Update preferences error
     res.status(500).json({
       success: false,
       message: 'Failed to update preferences'
@@ -352,7 +413,7 @@ export const getPreferences = async (req, res) => {
       data: preferences
     });
   } catch (error) {
-    console.error('Get preferences error:', error);
+    // Get preferences error
     res.status(500).json({
       success: false,
       message: 'Failed to fetch preferences'
@@ -394,7 +455,7 @@ export const deleteAccount = async (req, res) => {
       message: 'Account deactivated successfully'
     });
   } catch (error) {
-    console.error('Delete account error:', error);
+    // Delete account error
     res.status(500).json({
       success: false,
       message: 'Failed to delete account'

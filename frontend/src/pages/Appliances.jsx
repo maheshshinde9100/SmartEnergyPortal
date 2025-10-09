@@ -61,7 +61,7 @@ const Appliances = () => {
       setEditingAppliance(null);
       setFormData({ name: '', category: 'Lighting', defaultWattage: '', description: '', minHours: '', maxHours: '', peakUsageTime: '' });
     } catch (error) {
-      console.error('Error saving appliance:', error);
+      // Error saving appliance
     }
   };
 
@@ -118,7 +118,7 @@ const Appliances = () => {
           className="mt-4 sm:mt-0 btn-primary flex items-center"
         >
           <Plus size={20} className="mr-2" />
-          Add Custom Appliance
+          Add Appliance
         </button>
       </div>
 
@@ -171,24 +171,22 @@ const Appliances = () => {
                 </div>
               </div>
 
-              {appliance.isCustom && (
-                <div className="flex space-x-1">
-                  <button
-                    onClick={() => handleEdit(appliance)}
-                    className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
-                    title="Edit Appliance"
-                  >
-                    <Edit size={16} />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(appliance._id)}
-                    className="p-1 text-gray-400 hover:text-red-600 transition-colors"
-                    title="Delete Appliance"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              )}
+              <div className="flex space-x-1">
+                <button
+                  onClick={() => handleEdit(appliance)}
+                  className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                  title="Edit Appliance"
+                >
+                  <Edit size={16} />
+                </button>
+                <button
+                  onClick={() => handleDelete(appliance._id)}
+                  className="p-1 text-gray-400 hover:text-red-600 transition-colors"
+                  title="Delete Appliance"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
             </div>
 
             <div className="space-y-3">
@@ -198,12 +196,9 @@ const Appliances = () => {
               </div>
 
               <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-600">Type</span>
-                <span className={`text-xs px-2 py-1 rounded-full ${appliance.isCustom
-                  ? 'bg-purple-100 text-purple-800'
-                  : 'bg-green-100 text-green-800'
-                  }`}>
-                  {appliance.isCustom ? 'Custom' : 'Standard'}
+                <span className="text-sm text-gray-600">Owner</span>
+                <span className="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-800">
+                  My Appliance
                 </span>
               </div>
 
@@ -275,7 +270,7 @@ const Appliances = () => {
             <div className="p-6">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-lg font-semibold text-gray-900">
-                  {editingAppliance ? 'Edit Appliance' : 'Add Custom Appliance'}
+                  {editingAppliance ? 'Edit Appliance' : 'Add Appliance'}
                 </h3>
                 <button
                   onClick={closeModal}

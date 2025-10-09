@@ -157,7 +157,7 @@ const Admin = () => {
 
       setIsLoading(false);
     } catch (error) {
-      console.error('Failed to fetch admin data:', error);
+      // Failed to fetch admin data
       toast.error('Failed to load admin data');
       setIsLoading(false);
     }

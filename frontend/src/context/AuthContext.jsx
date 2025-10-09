@@ -84,7 +84,7 @@ export const AuthProvider = ({ children }) => {
           dispatch({ type: 'SET_LOADING', payload: false });
         }
       } catch (error) {
-        console.error('Auth initialization error:', error);
+        // Auth initialization error
         dispatch({ type: 'SET_LOADING', payload: false });
       }
     };
@@ -150,7 +150,7 @@ export const AuthProvider = ({ children }) => {
         await authAPI.logout({ refreshToken: state.refreshToken });
       }
     } catch (error) {
-      console.error('Logout error:', error);
+      // Logout error
     } finally {
       // Clear localStorage
       localStorage.removeItem('accessToken');
@@ -185,7 +185,7 @@ export const AuthProvider = ({ children }) => {
         return accessToken;
       }
     } catch (error) {
-      console.error('Token refresh failed:', error);
+      // Token refresh failed
       logout();
       throw error;
     }

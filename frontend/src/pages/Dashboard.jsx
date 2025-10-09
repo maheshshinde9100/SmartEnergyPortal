@@ -11,63 +11,29 @@ import {
   Lightbulb
 } from 'lucide-react';
 import LoadingSpinner from '../components/common/LoadingSpinner';
+import { dashboardAPI } from '../services/api';
+import toast from 'react-hot-toast';
 
 const Dashboard = () => {
   const { user } = useAuth();
-  const [dashboardData, setDashboardData] = useState({
-    currentMonth: {
-      consumption: 0,
-      estimatedBill: 0,
-      appliances: 0
-    },
-    lastMonth: {
-      consumption: 0,
-      bill: 0
-    },
-    prediction: {
-      nextMonth: 0,
-      confidence: 0
-    },
-    peakHours: [],
-    recentActivity: []
-  });
+  const [dashboardData, setDashboardData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Simulate API call
     const fetchDashboardData = async () => {
       try {
-        // Mock data for now
-        setTimeout(() => {
-          setDashboardData({
-            currentMonth: {
-              consumption: 245.5,
-              estimatedBill: 1850,
-              appliances: 12
-            },
-            lastMonth: {
-              consumption: 220.3,
-              bill: 1650
-            },
-            prediction: {
-              nextMonth: 260.2,
-              confidence: 85
-            },
-            peakHours: [
-              { hour: '18:00-20:00', consumption: 45.2 },
-              { hour: '20:00-22:00', consumption: 38.7 },
-              { hour: '06:00-08:00', consumption: 32.1 }
-            ],
-            recentActivity: [
-              { action: 'Consumption data submitted', date: '2 days ago' },
-              { action: 'New appliance added: LED TV', date: '5 days ago' },
-              { action: 'Monthly bill generated', date: '1 week ago' }
-            ]
-          });
-          setIsLoading(false);
-        }, 1000);
+        setIsLoading(true);
+        const response = await dashboardAPI.getData();
+        
+        if (response.success) {
+          setDashboardData(response.data);
+        } else {
+          toast.error('Failed to load dashboard data');
+        }
       } catch (error) {
-        console.error('Failed to fetch dashboard data:', error);
+        console.error('Dashboard fetch error:', error);
+        toast.error('Failed to load dashboard data');
+      } finally {
         setIsLoading(false);
       }
     };
@@ -83,8 +49,64 @@ const Dashboard = () => {
     );
   }
 
-  const consumptionChange = ((dashboardData.currentMonth.consumption - dashboardData.lastMonth.consumption) / dashboardData.lastMonth.consumption * 100).toFixed(1);
-  const isConsumptionUp = consumptionChange > 0;
+  if (!dashboardData) {
+    return (
+      <div className="flex items-center justify-center min-h-96">
+        <div className="text-center">
+          <AlertCircle size={48} className="text-gray-400 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 mb-2">No Data Available</h3>
+          <p className="text-gray-500">Unable to load dashboard data. Please try again later.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Handle different data structures for user vs admin
+  const isAdmin = user?.role === 'admin';
+  
+  let currentConsumption, currentBill, lastConsumption, lastBill, consumptionChange, isConsumptionUp;
+  let totalAppliances, recentActivity, insights;
+
+  if (isAdmin) {
+    // Admin dashboard data
+    currentConsumption = dashboardData.currentMonth?.consumption || 0;
+    currentBill = dashboardData.currentMonth?.revenue || 0;
+    lastConsumption = 0; // We'll calculate this from trends if available
+    lastBill = 0;
+    consumptionChange = dashboardData.currentMonth?.growth || 0;
+    isConsumptionUp = consumptionChange > 0;
+    totalAppliances = dashboardData.system?.totalAppliances || 0;
+    recentActivity = [
+      { action: `${dashboardData.system?.recentUsers || 0} new users this month`, date: 'This month' },
+      { action: `${dashboardData.system?.totalUsers || 0} total users`, date: 'System wide' },
+      { action: `${dashboardData.currentMonth?.activeUsers || 0} active users`, date: 'This month' }
+    ];
+    insights = dashboardData.insights;
+  } else {
+    // User dashboard data
+    currentConsumption = dashboardData.currentMonth?.consumption || 0;
+    currentBill = dashboardData.currentMonth?.bill || 0;
+    
+    // Calculate last month data from recent activity
+    const lastMonthData = dashboardData.recentActivity?.find(activity => 
+      activity.month === (new Date().getMonth() === 0 ? 12 : new Date().getMonth()) &&
+      activity.year === (new Date().getMonth() === 0 ? new Date().getFullYear() - 1 : new Date().getFullYear())
+    );
+    
+    lastConsumption = lastMonthData?.consumption || 0;
+    lastBill = lastMonthData?.bill || 0;
+    
+    consumptionChange = dashboardData.currentMonth?.change || 0;
+    isConsumptionUp = consumptionChange > 0;
+    totalAppliances = dashboardData.appliances?.total || 0;
+    
+    recentActivity = dashboardData.recentActivity?.slice(0, 3).map(activity => ({
+      action: `${activity.consumption} kWh consumed`,
+      date: `${activity.month}/${activity.year}`
+    })) || [];
+    
+    insights = dashboardData.insights;
+  }
 
   return (
     <div className="space-y-6">
@@ -113,9 +135,11 @@ const Dashboard = () => {
         <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Current Month</p>
+              <p className="text-sm font-medium text-gray-600">
+                {isAdmin ? 'System Consumption' : 'Current Month'}
+              </p>
               <p className="text-2xl font-bold text-gray-900">
-                {dashboardData.currentMonth.consumption} kWh
+                {currentConsumption.toFixed(1)} kWh
               </p>
               <div className="flex items-center mt-2">
                 <TrendingUp 
@@ -123,7 +147,7 @@ const Dashboard = () => {
                   className={isConsumptionUp ? 'text-red-500' : 'text-green-500'} 
                 />
                 <span className={`text-sm ml-1 ${isConsumptionUp ? 'text-red-600' : 'text-green-600'}`}>
-                  {Math.abs(consumptionChange)}% from last month
+                  {Math.abs(consumptionChange).toFixed(1)}% from last month
                 </span>
               </div>
             </div>
@@ -133,16 +157,18 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Estimated Bill */}
+        {/* Estimated Bill / Revenue */}
         <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Estimated Bill</p>
+              <p className="text-sm font-medium text-gray-600">
+                {isAdmin ? 'System Revenue' : 'Estimated Bill'}
+              </p>
               <p className="text-2xl font-bold text-gray-900">
-                ₹{dashboardData.currentMonth.estimatedBill}
+                ₹{currentBill.toFixed(0)}
               </p>
               <p className="text-sm text-gray-500 mt-2">
-                Last month: ₹{dashboardData.lastMonth.bill}
+                {lastBill > 0 ? `Last month: ₹${lastBill.toFixed(0)}` : 'Current month'}
               </p>
             </div>
             <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
@@ -151,16 +177,24 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Prediction */}
+        {/* Users / Prediction */}
         <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Next Month Prediction</p>
+              <p className="text-sm font-medium text-gray-600">
+                {isAdmin ? 'Total Users' : 'Average Usage'}
+              </p>
               <p className="text-2xl font-bold text-gray-900">
-                {dashboardData.prediction.nextMonth} kWh
+                {isAdmin 
+                  ? dashboardData.system?.totalUsers || 0
+                  : `${dashboardData.user?.averageConsumption?.toFixed(1) || 0} kWh`
+                }
               </p>
               <p className="text-sm text-gray-500 mt-2">
-                {dashboardData.prediction.confidence}% confidence
+                {isAdmin 
+                  ? `${dashboardData.system?.activeUsers || 0} active`
+                  : 'Monthly average'
+                }
               </p>
             </div>
             <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
@@ -169,16 +203,18 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Active Appliances */}
+        {/* Appliances */}
         <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Active Appliances</p>
+              <p className="text-sm font-medium text-gray-600">
+                {isAdmin ? 'System Appliances' : 'My Appliances'}
+              </p>
               <p className="text-2xl font-bold text-gray-900">
-                {dashboardData.currentMonth.appliances}
+                {totalAppliances}
               </p>
               <p className="text-sm text-gray-500 mt-2">
-                Tracked this month
+                {isAdmin ? 'Total registered' : 'In your account'}
               </p>
             </div>
             <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
@@ -190,51 +226,145 @@ const Dashboard = () => {
 
       {/* Charts and Details */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Peak Hours */}
+        {/* Top Appliances / Monthly Trends */}
         <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
           <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-semibold text-gray-900">Peak Usage Hours</h3>
+            <h3 className="text-lg font-semibold text-gray-900">
+              {isAdmin ? 'Monthly Trends' : 'Top Appliances'}
+            </h3>
             <Clock size={20} className="text-gray-400" />
           </div>
           
           <div className="space-y-4">
-            {dashboardData.peakHours.map((peak, index) => (
-              <div key={index} className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <div className="w-3 h-3 bg-primary-500 rounded-full"></div>
-                  <span className="text-sm font-medium text-gray-700">{peak.hour}</span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <div className="w-24 bg-gray-200 rounded-full h-2">
-                    <div 
-                      className="bg-primary-500 h-2 rounded-full" 
-                      style={{ width: `${(peak.consumption / 50) * 100}%` }}
-                    ></div>
+            {isAdmin ? (
+              // Admin: Show monthly trends
+              dashboardData.monthlyTrends?.slice(0, 3).map((trend, index) => (
+                <div key={index} className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-3 h-3 bg-primary-500 rounded-full"></div>
+                    <span className="text-sm font-medium text-gray-700">
+                      {trend.month}/{trend.year}
+                    </span>
                   </div>
-                  <span className="text-sm text-gray-600">{peak.consumption} kWh</span>
+                  <div className="flex items-center space-x-2">
+                    <div className="w-24 bg-gray-200 rounded-full h-2">
+                      <div 
+                        className="bg-primary-500 h-2 rounded-full" 
+                        style={{ width: `${Math.min((trend.consumption / 1000) * 100, 100)}%` }}
+                      ></div>
+                    </div>
+                    <span className="text-sm text-gray-600">{trend.consumption?.toFixed(1)} kWh</span>
+                  </div>
                 </div>
+              )) || []
+            ) : (
+              // User: Show top appliances
+              dashboardData.appliances?.topConsumers?.map((appliance, index) => (
+                <div key={index} className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-3 h-3 bg-primary-500 rounded-full"></div>
+                    <span className="text-sm font-medium text-gray-700">{appliance.name}</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <div className="w-24 bg-gray-200 rounded-full h-2">
+                      <div 
+                        className="bg-primary-500 h-2 rounded-full" 
+                        style={{ width: `${Math.min((appliance.wattage / 2000) * 100, 100)}%` }}
+                      ></div>
+                    </div>
+                    <span className="text-sm text-gray-600">{appliance.wattage}W</span>
+                  </div>
+                </div>
+              )) || []
+            )}
+            
+            {/* Show message if no data */}
+            {((isAdmin && (!dashboardData.monthlyTrends || dashboardData.monthlyTrends.length === 0)) ||
+              (!isAdmin && (!dashboardData.appliances?.topConsumers || dashboardData.appliances.topConsumers.length === 0))) && (
+              <div className="text-center py-4">
+                <p className="text-sm text-gray-500">
+                  {isAdmin ? 'No trend data available' : 'No appliances added yet'}
+                </p>
               </div>
-            ))}
+            )}
           </div>
         </div>
 
-        {/* Recent Activity */}
+        {/* Recent Activity / Insights */}
         <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
           <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-semibold text-gray-900">Recent Activity</h3>
+            <h3 className="text-lg font-semibold text-gray-900">
+              {isAdmin ? 'System Insights' : 'Recent Activity'}
+            </h3>
             <Calendar size={20} className="text-gray-400" />
           </div>
           
           <div className="space-y-4">
-            {dashboardData.recentActivity.map((activity, index) => (
-              <div key={index} className="flex items-start space-x-3">
-                <div className="w-2 h-2 bg-primary-500 rounded-full mt-2"></div>
-                <div className="flex-1">
-                  <p className="text-sm text-gray-900">{activity.action}</p>
-                  <p className="text-xs text-gray-500">{activity.date}</p>
+            {isAdmin ? (
+              // Admin: Show system insights and alerts
+              <>
+                <div className="flex items-start space-x-3">
+                  <div className="w-2 h-2 bg-primary-500 rounded-full mt-2"></div>
+                  <div className="flex-1">
+                    <p className="text-sm text-gray-900">
+                      System Health: {dashboardData.insights?.systemHealth || 'Unknown'}
+                    </p>
+                    <p className="text-xs text-gray-500">Current status</p>
+                  </div>
                 </div>
-              </div>
-            ))}
+                
+                {dashboardData.insights?.alerts?.map((alert, index) => (
+                  <div key={index} className="flex items-start space-x-3">
+                    <div className={`w-2 h-2 rounded-full mt-2 ${
+                      alert.type === 'warning' ? 'bg-yellow-500' :
+                      alert.type === 'success' ? 'bg-green-500' : 'bg-blue-500'
+                    }`}></div>
+                    <div className="flex-1">
+                      <p className="text-sm text-gray-900">{alert.message}</p>
+                      <p className="text-xs text-gray-500">{alert.type}</p>
+                    </div>
+                  </div>
+                )) || []}
+                
+                {(!dashboardData.insights?.alerts || dashboardData.insights.alerts.length === 0) && (
+                  <div className="text-center py-4">
+                    <p className="text-sm text-gray-500">No alerts at this time</p>
+                  </div>
+                )}
+              </>
+            ) : (
+              // User: Show recent activity and recommendations
+              <>
+                {recentActivity.map((activity, index) => (
+                  <div key={index} className="flex items-start space-x-3">
+                    <div className="w-2 h-2 bg-primary-500 rounded-full mt-2"></div>
+                    <div className="flex-1">
+                      <p className="text-sm text-gray-900">{activity.action}</p>
+                      <p className="text-xs text-gray-500">{activity.date}</p>
+                    </div>
+                  </div>
+                ))}
+                
+                {insights?.recommendation && (
+                  <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+                    <div className="flex items-start space-x-2">
+                      <Lightbulb size={16} className="text-blue-600 mt-0.5" />
+                      <div>
+                        <p className="text-sm font-medium text-blue-900">Recommendation</p>
+                        <p className="text-xs text-blue-700 mt-1">{insights.recommendation}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {recentActivity.length === 0 && (
+                  <div className="text-center py-4">
+                    <p className="text-sm text-gray-500">No recent activity</p>
+                    <p className="text-xs text-gray-400 mt-1">Start by adding appliances or consumption data</p>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </div>
       </div>

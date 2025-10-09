@@ -134,7 +134,7 @@ const Analytics = () => {
                 setIsLoading(false);
             }, 1000);
         } catch (error) {
-            console.error('Failed to fetch analytics data:', error);
+            // Failed to fetch analytics data
             setIsLoading(false);
         }
     };

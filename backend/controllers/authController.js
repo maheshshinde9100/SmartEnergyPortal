@@ -91,7 +91,7 @@ export const register = async (req, res) => {
         `
       });
     } catch (emailError) {
-      console.error('Email sending failed:', emailError);
+      // Email sending failed
     }
 
     // In production, also send SMS OTP for mobile verification
@@ -108,7 +108,7 @@ export const register = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Registration error:', error);
+    // Registration error
     res.status(500).json({
       success: false,
       message: 'Registration failed. Please try again.'
@@ -177,7 +177,7 @@ export const login = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Login error:', error);
+    // Login error
     res.status(500).json({
       success: false,
       message: 'Login failed. Please try again.'
@@ -209,7 +209,7 @@ export const refreshToken = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Token refresh error:', error);
+    // Token refresh error
     res.status(500).json({
       success: false,
       message: 'Token refresh failed. Please login again.'
@@ -236,7 +236,7 @@ export const logout = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Logout error:', error);
+    // Logout error
     res.status(500).json({
       success: false,
       message: 'Logout failed'
@@ -300,7 +300,7 @@ export const verifyOTP = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('OTP verification error:', error);
+    // OTP verification error
     res.status(500).json({
       success: false,
       message: 'OTP verification failed'
@@ -355,7 +355,7 @@ export const resendOTP = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Resend OTP error:', error);
+    // Resend OTP error
     res.status(500).json({
       success: false,
       message: 'Failed to resend OTP'
@@ -410,7 +410,7 @@ export const forgotPassword = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Forgot password error:', error);
+    // Forgot password error
     res.status(500).json({
       success: false,
       message: 'Failed to send password reset email'
@@ -458,7 +458,7 @@ export const resetPassword = async (req, res) => {
       });
     }
 
-    console.error('Reset password error:', error);
+    // Reset password error
     res.status(500).json({
       success: false,
       message: 'Password reset failed'

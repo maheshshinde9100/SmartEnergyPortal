@@ -89,7 +89,7 @@ export const submitConsumption = async (req, res) => {
       data: consumption
     });
   } catch (error) {
-    console.error('Submit consumption error:', error);
+    // Submit consumption error
     res.status(500).json({
       success: false,
       message: 'Failed to submit consumption data'
@@ -127,7 +127,7 @@ export const getConsumptionHistory = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Get consumption history error:', error);
+    // Get consumption history error
     res.status(500).json({
       success: false,
       message: 'Failed to fetch consumption history'
@@ -154,7 +154,7 @@ export const getCurrentConsumption = async (req, res) => {
       data: currentConsumption
     });
   } catch (error) {
-    console.error('Get current consumption error:', error);
+    // Get current consumption error
     res.status(500).json({
       success: false,
       message: 'Failed to fetch current consumption'
@@ -232,7 +232,7 @@ export const updateConsumption = async (req, res) => {
       data: consumption
     });
   } catch (error) {
-    console.error('Update consumption error:', error);
+    // Update consumption error
     res.status(500).json({
       success: false,
       message: 'Failed to update consumption data'
@@ -262,7 +262,7 @@ export const deleteConsumption = async (req, res) => {
       message: 'Consumption record deleted successfully'
     });
   } catch (error) {
-    console.error('Delete consumption error:', error);
+    // Delete consumption error
     res.status(500).json({
       success: false,
       message: 'Failed to delete consumption record'
@@ -339,7 +339,7 @@ export const getConsumptionPredictions = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Get predictions error:', error);
+    // Get predictions error
     res.status(500).json({
       success: false,
       message: 'Failed to generate predictions'

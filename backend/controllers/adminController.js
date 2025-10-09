@@ -65,7 +65,7 @@ export const getAdminOverview = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Admin overview error:', error);
+    // Admin overview error
     res.status(500).json({
       success: false,
       message: 'Failed to fetch admin overview'
@@ -140,7 +140,7 @@ export const getAllUsers = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Get all users error:', error);
+    // Get all users error
     res.status(500).json({
       success: false,
       message: 'Failed to fetch users'
@@ -267,7 +267,7 @@ export const getConsumptionAnalytics = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Consumption analytics error:', error);
+    // Consumption analytics error
     res.status(500).json({
       success: false,
       message: 'Failed to fetch consumption analytics'
@@ -459,7 +459,7 @@ export const getSystemPredictions = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('System predictions error:', error);
+    // System predictions error
     res.status(500).json({
       success: false,
       message: 'Failed to generate system predictions'
@@ -499,7 +499,7 @@ export const updateTariffRates = async (req, res) => {
       data: newTariff
     });
   } catch (error) {
-    console.error('Update tariff error:', error);
+    // Update tariff error
     res.status(500).json({
       success: false,
       message: 'Failed to update tariff rates'
@@ -526,7 +526,7 @@ export const getCurrentTariff = async (req, res) => {
       data: currentTariff
     });
   } catch (error) {
-    console.error('Get current tariff error:', error);
+    // Get current tariff error
     res.status(500).json({
       success: false,
       message: 'Failed to fetch current tariff'
@@ -556,7 +556,7 @@ export const toggleUserStatus = async (req, res) => {
       data: { userId, isActive: user.isActive }
     });
   } catch (error) {
-    console.error('Toggle user status error:', error);
+    // Toggle user status error
     res.status(500).json({
       success: false,
       message: 'Failed to update user status'
@@ -712,7 +712,7 @@ export const getPeakUsageAnalysis = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Peak usage analysis error:', error);
+    // Peak usage analysis error
     res.status(500).json({
       success: false,
       message: 'Failed to generate peak usage analysis'
@@ -801,7 +801,7 @@ export const getUserDetails = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Get user details error:', error);
+    // Get user details error
     res.status(500).json({
       success: false,
       message: 'Failed to fetch user details'

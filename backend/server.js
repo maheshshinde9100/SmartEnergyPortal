@@ -15,6 +15,7 @@ import applianceRoutes from './routes/appliances.js';
 import consumptionRoutes from './routes/consumption.js';
 import analyticsRoutes from './routes/analytics.js';
 import adminRoutes from './routes/admin.js';
+import dashboardRoutes from './routes/dashboard.js';
 
 // Load environment variables
 dotenv.config();
@@ -22,12 +23,8 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Connect to MongoDB and seed database
-connectDB().then(async () => {
-  // Seed database with default data
-  const { seedDatabase } = await import('./utils/seedDatabase.js');
-  await seedDatabase();
-});
+// Connect to MongoDB
+connectDB();
 
 // Security middleware
 app.use(helmet());
@@ -80,6 +77,7 @@ app.use('/api/appliances', applianceRoutes);
 app.use('/api/consumption', consumptionRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 
 // 404 handler
 app.use((req, res) => {
@@ -94,8 +92,9 @@ app.use(errorHandler);
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT} in ${process.env.NODE_ENV} mode`);
+  console.log(`🚀 Server running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
   console.log(`📊 Smart Energy Portal API: http://localhost:${PORT}/api/health`);
+  console.log(`🔗 Dashboard API: http://localhost:${PORT}/api/dashboard`);
 });
 
 export default app;

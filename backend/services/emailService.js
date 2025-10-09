@@ -20,7 +20,7 @@ const createTransporter = () => {
 export const sendEmail = async ({ to, subject, html, text }) => {
   try {
     if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-      console.warn('Email credentials not configured. Email not sent.');
+      // Email credentials not configured
       return { success: false, message: 'Email service not configured' };
     }
 
@@ -39,11 +39,11 @@ export const sendEmail = async ({ to, subject, html, text }) => {
 
     const info = await transporter.sendMail(mailOptions);
     
-    console.log('Email sent successfully:', info.messageId);
+    // Email sent successfully
     return { success: true, messageId: info.messageId };
 
   } catch (error) {
-    console.error('Email sending failed:', error);
+    // Email sending failed
     return { success: false, error: error.message };
   }
 };

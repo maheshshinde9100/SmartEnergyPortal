@@ -88,7 +88,7 @@ const Profile = () => {
         setPreferences(preferencesResponse.data);
       }
     } catch (error) {
-      console.error('Failed to fetch profile data:', error);
+      // Failed to fetch profile data
       toast.error('Failed to load profile data');
     } finally {
       setIsLoading(false);
@@ -384,20 +384,59 @@ const Profile = () => {
               {userStats && (
                 <div className="bg-gradient-to-r from-primary-50 to-purple-50 rounded-xl p-6">
                   <h4 className="text-md font-semibold text-gray-900 mb-4">Account Statistics</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="text-center">
-                      <p className="text-2xl font-bold text-primary-600">{userStats.totalConsumptionRecords}</p>
-                      <p className="text-sm text-gray-600">Consumption Records</p>
+                  
+                  {userStats.hasConsumptionData ? (
+                    <>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="text-center">
+                          <p className="text-2xl font-bold text-primary-600">{userStats.totalConsumptionRecords}</p>
+                          <p className="text-sm text-gray-600">Consumption Records</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-2xl font-bold text-green-600">{userStats.averageMonthlyConsumption.toFixed(1)} kWh</p>
+                          <p className="text-sm text-gray-600">Avg Monthly Usage</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-2xl font-bold text-purple-600">{userStats.totalUserAppliances}</p>
+                          <p className="text-sm text-gray-600">My Appliances</p>
+                        </div>
+                      </div>
+                      
+                      {/* Additional Statistics Row */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                        <div className="text-center">
+                          <p className="text-lg font-bold text-blue-600">₹{userStats.averageMonthlyBill?.toFixed(0) || '0'}</p>
+                          <p className="text-sm text-gray-600">Avg Monthly Bill</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-lg font-bold text-orange-600">{userStats.totalConsumption?.toFixed(1) || '0'} kWh</p>
+                          <p className="text-sm text-gray-600">Total Consumption</p>
+                        </div>
+                        <div className="text-center">
+                          <p className={`text-lg font-bold ${
+                            userStats.consumptionTrend === 'increasing' ? 'text-red-600' :
+                            userStats.consumptionTrend === 'decreasing' ? 'text-green-600' : 'text-gray-600'
+                          }`}>
+                            {userStats.consumptionTrend === 'increasing' ? '↗️ Rising' :
+                             userStats.consumptionTrend === 'decreasing' ? '↘️ Falling' : '→ Stable'}
+                          </p>
+                          <p className="text-sm text-gray-600">Usage Trend</p>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-center py-8">
+                      <div className="text-6xl mb-4">📊</div>
+                      <h5 className="text-lg font-medium text-gray-700 mb-2">No Consumption Data Yet</h5>
+                      <p className="text-gray-500 mb-4">Start tracking your energy usage to see detailed statistics here.</p>
+                      <div className="grid grid-cols-1 gap-4 max-w-md mx-auto">
+                        <div className="text-center">
+                          <p className="text-xl font-bold text-purple-600">{userStats.totalUserAppliances}</p>
+                          <p className="text-sm text-gray-600">My Appliances</p>
+                        </div>
+                      </div>
                     </div>
-                    <div className="text-center">
-                      <p className="text-2xl font-bold text-green-600">{userStats.averageMonthlyConsumption.toFixed(1)} kWh</p>
-                      <p className="text-sm text-gray-600">Avg Monthly Usage</p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-2xl font-bold text-purple-600">{userStats.totalCustomAppliances}</p>
-                      <p className="text-sm text-gray-600">Custom Appliances</p>
-                    </div>
-                  </div>
+                  )}
                   
                   <div className="mt-4 pt-4 border-t border-gray-200">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
@@ -424,6 +463,19 @@ const Profile = () => {
                         </span>
                       </div>
                     </div>
+                    
+                    {/* Latest Activity */}
+                    {userStats.latestConsumption && (
+                      <div className="mt-3 pt-3 border-t border-gray-200">
+                        <div className="text-sm">
+                          <span className="text-gray-600">Latest Record: </span>
+                          <span className="font-medium">
+                            {userStats.latestConsumption.month}/{userStats.latestConsumption.year} - 
+                            {userStats.latestConsumption.units} kWh (₹{userStats.latestConsumption.bill?.toFixed(0)})
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

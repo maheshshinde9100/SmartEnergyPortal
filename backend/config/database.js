@@ -10,13 +10,11 @@ const connectDB = async () => {
       ? (mongoURI.endsWith('/') ? `${mongoURI}${dbName}` : `${mongoURI}/${dbName}`)
       : mongoURI;
     
-    console.log('🔍 Attempting to connect to MongoDB...');
-    console.log('🔗 Database Name:', dbName);
-    console.log('🔗 MongoDB URI:', fullURI.replace(/\/\/([^:]+):([^@]+)@/, '//***:***@'));
+    // Connecting to MongoDB...
 
     const conn = await mongoose.connect(fullURI);
 
-    console.log(`📦 MongoDB Connected: ${conn.connection.host}`);
+    // MongoDB Connected successfully
     
     // Handle connection events
     mongoose.connection.on('error', (err) => {
@@ -24,13 +22,12 @@ const connectDB = async () => {
     });
 
     mongoose.connection.on('disconnected', () => {
-      console.log('📦 MongoDB disconnected');
+      // MongoDB disconnected
     });
 
     // Graceful shutdown
     process.on('SIGINT', async () => {
       await mongoose.connection.close();
-      console.log('📦 MongoDB connection closed through app termination');
       process.exit(0);
     });
 
