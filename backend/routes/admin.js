@@ -11,7 +11,8 @@ import {
   updateTariffRates,
   getCurrentTariff,
   toggleUserStatus,
-  getUserDetails
+  getUserDetails,
+  deleteUser
 } from '../controllers/adminController.js';
 
 const router = express.Router();
@@ -53,6 +54,7 @@ router.get('/overview', getAdminOverview);
 router.get('/users', getAllUsers);
 router.get('/users/:userId', getUserDetails);
 router.patch('/users/:userId/toggle-status', toggleUserStatus);
+router.delete('/users/:userId', deleteUser);
 router.get('/analytics', getConsumptionAnalytics);
 router.get('/predictions', getSystemPredictions);
 router.get('/peak-usage', getPeakUsageAnalysis);

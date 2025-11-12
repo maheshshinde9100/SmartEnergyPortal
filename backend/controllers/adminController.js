@@ -808,3 +808,74 @@ export const getUserDetails = async (req, res) => {
     });
   }
 };
+
+// Delete user and all associated data
+export const deleteUser = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    console.log('🗑️  Delete user request for ID:', userId);
+    
+    // Validate ObjectId format
+    if (!userId.match(/^[0-9a-fA-F]{24}$/)) {
+      console.log('❌ Invalid user ID format');
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid user ID format'
+      });
+    }
+    
+    // Find user
+    const user = await User.findById(userId);
+    console.log('👤 User found:', user ? `${user.email} (${user.role})` : 'Not found');
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Prevent deleting admin users
+    if (user.role === 'admin') {
+      console.log('⚠️  Attempted to delete admin user');
+      return res.status(403).json({
+        success: false,
+        message: 'Cannot delete admin users'
+      });
+    }
+
+    // Delete all associated data
+    console.log('🗑️  Deleting associated data...');
+    
+    // 1. Delete user's appliances
+    const appliancesDeleted = await Appliance.deleteMany({ createdBy: userId });
+    console.log(`   ✅ Deleted ${appliancesDeleted.deletedCount} appliances`);
+    
+    // 2. Delete user's consumption records
+    const consumptionDeleted = await Consumption.deleteMany({ userId: userId });
+    console.log(`   ✅ Deleted ${consumptionDeleted.deletedCount} consumption records`);
+    
+    // 3. Delete the user
+    await User.findByIdAndDelete(userId);
+    console.log(`   ✅ Deleted user: ${user.email}`);
+
+    console.log('✅ User deletion completed successfully');
+
+    res.json({
+      success: true,
+      message: 'User and all associated data deleted successfully',
+      data: {
+        deletedAppliances: appliancesDeleted.deletedCount,
+        deletedConsumptionRecords: consumptionDeleted.deletedCount
+      }
+    });
+  } catch (error) {
+    console.error('❌ Delete user error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete user',
+      error: error.message
+    });
+  }
+};

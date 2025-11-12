@@ -185,6 +185,13 @@ const Admin = () => {
         await adminAPI.toggleUserStatus(userId);
         toast.success(`User ${action}d successfully`);
         fetchAdminData();
+      } else if (action === 'delete') {
+        // Confirm before deleting
+        if (window.confirm('Are you sure you want to delete this user? This action cannot be undone and will delete all associated data (appliances, consumption records, etc.).')) {
+          await adminAPI.deleteUser(userId);
+          toast.success('User deleted successfully');
+          fetchAdminData();
+        }
       }
     } catch (error) {
       toast.error(`Failed to ${action} user`);
@@ -520,10 +527,17 @@ const Admin = () => {
                               </button>
                               <button
                                 onClick={() => handleUserAction(user._id, user.isActive ? 'deactivate' : 'activate')}
-                                className={user.isActive ? 'text-red-600 hover:text-red-900' : 'text-green-600 hover:text-green-900'}
+                                className={user.isActive ? 'text-orange-600 hover:text-orange-900' : 'text-green-600 hover:text-green-900'}
                                 title={user.isActive ? 'Deactivate' : 'Activate'}
                               >
                                 {user.isActive ? <XCircle size={16} /> : <CheckCircle size={16} />}
+                              </button>
+                              <button
+                                onClick={() => handleUserAction(user._id, 'delete')}
+                                className="text-red-600 hover:text-red-900"
+                                title="Delete User"
+                              >
+                                <Trash2 size={16} />
                               </button>
                             </div>
                           </td>

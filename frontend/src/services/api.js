@@ -121,6 +121,7 @@ export const adminAPI = {
   getUsers: (params) => api.get('/admin/users', { params }),
   getUserDetails: (userId) => api.get(`/admin/users/${userId}`),
   toggleUserStatus: (userId) => api.patch(`/admin/users/${userId}/toggle-status`),
+  deleteUser: (userId) => api.delete(`/admin/users/${userId}`),
   getAnalytics: (params) => api.get('/admin/analytics', { params }),
   getPredictions: () => api.get('/admin/predictions'),
   getPeakUsage: () => api.get('/admin/peak-usage'),
