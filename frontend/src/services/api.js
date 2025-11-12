@@ -95,14 +95,6 @@ export const applianceAPI = {
   delete: (id) => api.delete(`/appliances/${id}`),
 };
 
-// Consumption API
-export const consumptionAPI = {
-  submit: (data) => api.post('/consumption', data),
-  getHistory: (params) => api.get('/consumption/history', { params }),
-  getCurrent: () => api.get('/consumption/current'),
-  getPredictions: () => api.get('/consumption/predictions'),
-};
-
 // Analytics API
 export const analyticsAPI = {
   getTrends: (params) => api.get('/analytics/trends', { params }),
@@ -113,6 +105,16 @@ export const analyticsAPI = {
 // Dashboard API
 export const dashboardAPI = {
   getData: () => api.get('/dashboard'),
+};
+
+// Consumption API
+export const consumptionAPI = {
+  submit: (data) => api.post('/consumption', data),
+  getHistory: (params) => api.get('/consumption/history', { params }),
+  getCurrent: () => api.get('/consumption/current'),
+  getPredictions: () => api.get('/consumption/predictions'),
+  update: (id, data) => api.put(`/consumption/${id}`, data),
+  delete: (id) => api.delete(`/consumption/${id}`),
 };
 
 // Admin API

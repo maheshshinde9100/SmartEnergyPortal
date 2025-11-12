@@ -409,12 +409,7 @@ const Dashboard = () => {
                 });
                 navigate('/analytics');
               } else {
-                // For now, show message until Consumption page is created
-                toast('Consumption submission feature coming soon! For now, consumption data can be added via API or scripts.', { 
-                  icon: '⚡',
-                  duration: 5000 
-                });
-                // TODO: navigate('/consumption') when page is created
+                navigate('/consumption');
               }
             }}
             className="flex items-center justify-center p-4 bg-primary-50 hover:bg-primary-100 rounded-lg transition-colors"

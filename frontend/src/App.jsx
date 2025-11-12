@@ -9,6 +9,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Appliances from './pages/Appliances';
+import Consumption from './pages/Consumption';
 import Analytics from './pages/Analytics';
 import Profile from './pages/Profile';
 import Admin from './pages/Admin';
@@ -32,6 +33,7 @@ function App() {
               <Route index element={<Navigate to="/dashboard" replace />} />
               <Route path="dashboard" element={<Dashboard />} />
               <Route path="appliances" element={<Appliances />} />
+              <Route path="consumption" element={<Consumption />} />
               <Route path="analytics" element={
                 <ProtectedRoute requireAdmin>
                   <Analytics />
