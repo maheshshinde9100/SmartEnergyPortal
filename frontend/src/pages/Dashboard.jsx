@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { 
   Zap, 
@@ -16,6 +17,7 @@ import toast from 'react-hot-toast';
 
 const Dashboard = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [dashboardData, setDashboardData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -84,8 +86,13 @@ const Dashboard = () => {
     insights = dashboardData.insights;
   } else {
     // User dashboard data
-    currentConsumption = dashboardData.currentMonth?.consumption || 0;
-    currentBill = dashboardData.currentMonth?.bill || 0;
+    const isEstimated = dashboardData.currentMonth?.isEstimated || false;
+    currentConsumption = isEstimated 
+      ? (dashboardData.currentMonth?.estimatedConsumption || 0)
+      : (dashboardData.currentMonth?.consumption || 0);
+    currentBill = isEstimated
+      ? (dashboardData.currentMonth?.estimatedBill || 0)
+      : (dashboardData.currentMonth?.bill || 0);
     
     // Calculate last month data from recent activity
     const lastMonthData = dashboardData.recentActivity?.find(activity => 
@@ -129,6 +136,30 @@ const Dashboard = () => {
         </div>
       </div>
 
+      {/* Info Banner for Estimated Data */}
+      {!isAdmin && dashboardData.currentMonth?.isEstimated && (
+        <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
+          <div className="flex items-start space-x-3">
+            <AlertCircle size={20} className="text-orange-600 mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <h4 className="text-sm font-semibold text-orange-900 mb-1">
+                Showing Estimated Consumption
+              </h4>
+              <p className="text-sm text-orange-800">
+                You have {dashboardData.appliances?.total || 0} appliance(s) added, but no consumption data submitted yet. 
+                The values shown are estimates based on typical appliance usage. 
+                <button 
+                  onClick={() => toast.info('Consumption submission feature coming soon! For now, use the sample data script: npm run add-sample-consumption', { duration: 6000 })}
+                  className="font-medium underline ml-1 hover:text-orange-900"
+                >
+                  Submit your actual consumption data
+                </button> to see accurate statistics and predictions.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {/* Current Consumption */}
@@ -137,18 +168,29 @@ const Dashboard = () => {
             <div>
               <p className="text-sm font-medium text-gray-600">
                 {isAdmin ? 'System Consumption' : 'Current Month'}
+                {!isAdmin && dashboardData.currentMonth?.isEstimated && (
+                  <span className="ml-2 text-xs text-orange-600 font-normal">(Estimated)</span>
+                )}
               </p>
               <p className="text-2xl font-bold text-gray-900">
                 {currentConsumption.toFixed(1)} kWh
               </p>
               <div className="flex items-center mt-2">
-                <TrendingUp 
-                  size={16} 
-                  className={isConsumptionUp ? 'text-red-500' : 'text-green-500'} 
-                />
-                <span className={`text-sm ml-1 ${isConsumptionUp ? 'text-red-600' : 'text-green-600'}`}>
-                  {Math.abs(consumptionChange).toFixed(1)}% from last month
-                </span>
+                {consumptionChange !== 0 ? (
+                  <>
+                    <TrendingUp 
+                      size={16} 
+                      className={isConsumptionUp ? 'text-red-500' : 'text-green-500'} 
+                    />
+                    <span className={`text-sm ml-1 ${isConsumptionUp ? 'text-red-600' : 'text-green-600'}`}>
+                      {Math.abs(consumptionChange).toFixed(1)}% from last month
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-sm text-gray-500">
+                    {dashboardData.currentMonth?.isEstimated ? 'Based on appliances' : 'No change'}
+                  </span>
+                )}
               </div>
             </div>
             <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
@@ -163,12 +205,18 @@ const Dashboard = () => {
             <div>
               <p className="text-sm font-medium text-gray-600">
                 {isAdmin ? 'System Revenue' : 'Estimated Bill'}
+                {!isAdmin && dashboardData.currentMonth?.isEstimated && (
+                  <span className="ml-2 text-xs text-orange-600 font-normal">(Estimated)</span>
+                )}
               </p>
               <p className="text-2xl font-bold text-gray-900">
                 ₹{currentBill.toFixed(0)}
               </p>
               <p className="text-sm text-gray-500 mt-2">
-                {lastBill > 0 ? `Last month: ₹${lastBill.toFixed(0)}` : 'Current month'}
+                {dashboardData.currentMonth?.isEstimated 
+                  ? 'Based on appliance usage' 
+                  : (lastBill > 0 ? `Last month: ₹${lastBill.toFixed(0)}` : 'Current month')
+                }
               </p>
             </div>
             <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
@@ -374,22 +422,54 @@ const Dashboard = () => {
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h3>
         
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <button className="flex items-center justify-center p-4 bg-primary-50 hover:bg-primary-100 rounded-lg transition-colors">
+          <button 
+            onClick={() => {
+              if (isAdmin) {
+                toast.info('Admin users can view consumption data in Analytics');
+                navigate('/analytics');
+              } else {
+                // For now, show message until Consumption page is created
+                toast.info('Consumption submission feature coming soon! For now, consumption data can be added via API or scripts.', { duration: 5000 });
+                // TODO: navigate('/consumption') when page is created
+              }
+            }}
+            className="flex items-center justify-center p-4 bg-primary-50 hover:bg-primary-100 rounded-lg transition-colors"
+          >
             <Zap size={20} className="text-primary-600 mr-2" />
-            <span className="text-sm font-medium text-primary-700">Add Consumption</span>
+            <span className="text-sm font-medium text-primary-700">
+              {isAdmin ? 'View Consumption' : 'Add Consumption'}
+            </span>
           </button>
           
-          <button className="flex items-center justify-center p-4 bg-green-50 hover:bg-green-100 rounded-lg transition-colors">
+          <button 
+            onClick={() => navigate('/appliances')}
+            className="flex items-center justify-center p-4 bg-green-50 hover:bg-green-100 rounded-lg transition-colors"
+          >
             <Lightbulb size={20} className="text-green-600 mr-2" />
             <span className="text-sm font-medium text-green-700">Manage Appliances</span>
           </button>
           
-          <button className="flex items-center justify-center p-4 bg-purple-50 hover:bg-purple-100 rounded-lg transition-colors">
+          <button 
+            onClick={() => navigate('/analytics')}
+            className="flex items-center justify-center p-4 bg-purple-50 hover:bg-purple-100 rounded-lg transition-colors"
+          >
             <BarChart3 size={20} className="text-purple-600 mr-2" />
             <span className="text-sm font-medium text-purple-700">View Analytics</span>
           </button>
           
-          <button className="flex items-center justify-center p-4 bg-orange-50 hover:bg-orange-100 rounded-lg transition-colors">
+          <button 
+            onClick={() => {
+              if (isAdmin) {
+                toast.info('View user recommendations in User Management');
+                navigate('/admin');
+              } else if (dashboardData?.insights?.recommendation) {
+                toast.success(dashboardData.insights.recommendation, { duration: 6000 });
+              } else {
+                toast.info('Add appliances and submit consumption data to get personalized recommendations');
+              }
+            }}
+            className="flex items-center justify-center p-4 bg-orange-50 hover:bg-orange-100 rounded-lg transition-colors"
+          >
             <AlertCircle size={20} className="text-orange-600 mr-2" />
             <span className="text-sm font-medium text-orange-700">Get Recommendations</span>
           </button>

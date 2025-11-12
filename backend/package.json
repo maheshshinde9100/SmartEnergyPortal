@@ -16,6 +16,7 @@
     "fix-admin": "node scripts/fixAdminPassword.js",
     "setup-admin": "node scripts/setupAdmin.js",
     "setup-admin-user": "node scripts/setupAdminUser.js",
+    "add-sample-consumption": "node scripts/addSampleConsumption.js",
     "seed-db": "node utils/seedDatabase.js"
   },
   "dependencies": {

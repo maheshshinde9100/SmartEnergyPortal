@@ -106,12 +106,38 @@ const getUserDashboardData = async (userId) => {
         return acc;
     }, {});
 
-    // Calculate estimated monthly cost based on appliances
-    const estimatedMonthlyCost = userAppliances.reduce((total, appliance) => {
-        const dailyUsage = (appliance.usageHints?.minHours || 4) * appliance.defaultWattage / 1000; // kWh per day
-        const monthlyUsage = dailyUsage * 30;
-        return total + (monthlyUsage * 5); // Assuming average rate of ₹5 per kWh
-    }, 0);
+    // Calculate estimated monthly consumption and cost based on appliances
+    let estimatedMonthlyConsumption = 0;
+    let estimatedMonthlyCost = 0;
+    
+    if (userAppliances.length > 0) {
+        userAppliances.forEach(appliance => {
+            // Use average of min and max hours, or default to 4 hours
+            const avgHours = appliance.usageHints?.minHours 
+                ? (appliance.usageHints.minHours + (appliance.usageHints.maxHours || appliance.usageHints.minHours)) / 2
+                : 4;
+            const dailyUsage = (avgHours * appliance.defaultWattage) / 1000; // kWh per day
+            const monthlyUsage = dailyUsage * 30;
+            estimatedMonthlyConsumption += monthlyUsage;
+        });
+        
+        // Calculate estimated bill using tariff slabs
+        if (estimatedMonthlyConsumption > 0) {
+            const slabs = [
+                { min: 0, max: 100, rate: 3.5 },
+                { min: 101, max: 300, rate: 4.5 },
+                { min: 301, max: 500, rate: 6.0 },
+                { min: 501, max: Infinity, rate: 7.5 }
+            ];
+            let remainingUnits = estimatedMonthlyConsumption;
+            for (const slab of slabs) {
+                if (remainingUnits <= 0) break;
+                const slabUnits = Math.min(remainingUnits, slab.max - slab.min + 1);
+                estimatedMonthlyCost += slabUnits * slab.rate;
+                remainingUnits -= slabUnits;
+            }
+        }
+    }
 
     return {
         user: {
@@ -120,13 +146,18 @@ const getUserDashboardData = async (userId) => {
             totalConsumption: Math.round(totalConsumption * 100) / 100,
             totalBill: Math.round(totalBill * 100) / 100,
             averageConsumption: Math.round(averageConsumption * 100) / 100,
-            estimatedMonthlyCost: Math.round(estimatedMonthlyCost * 100) / 100
+            estimatedMonthlyCost: Math.round(estimatedMonthlyCost * 100) / 100,
+            estimatedMonthlyConsumption: Math.round(estimatedMonthlyConsumption * 100) / 100
         },
         currentMonth: {
             consumption: currentMonthRecord?.totalUnits || 0,
             bill: currentMonthRecord?.estimatedBill || 0,
             change: Math.round(monthlyChange * 100) / 100,
-            trend: monthlyChange > 5 ? 'increasing' : monthlyChange < -5 ? 'decreasing' : 'stable'
+            trend: monthlyChange > 5 ? 'increasing' : monthlyChange < -5 ? 'decreasing' : 'stable',
+            // If no consumption record exists, show estimated values
+            isEstimated: !currentMonthRecord,
+            estimatedConsumption: Math.round(estimatedMonthlyConsumption * 100) / 100,
+            estimatedBill: Math.round(estimatedMonthlyCost * 100) / 100
         },
         recentActivity,
         appliances: {
@@ -145,6 +176,7 @@ const getUserDashboardData = async (userId) => {
             hasData: consumptionRecords.length > 0,
             hasAppliances: userAppliances.length > 0,
             needsAttention: monthlyChange > 20,
+            showEstimated: userAppliances.length > 0 && consumptionRecords.length === 0,
             recommendation: getRecommendation(consumptionRecords, userAppliances, monthlyChange)
         }
     };
@@ -297,12 +329,12 @@ const getAdminDashboardData = async () => {
 
 // Helper function to get user recommendations
 const getRecommendation = (consumptionRecords, appliances, monthlyChange) => {
-    if (consumptionRecords.length === 0) {
-        return "Start tracking your energy consumption to get personalized insights.";
+    if (appliances.length === 0) {
+        return "Add your appliances to start tracking energy consumption and get personalized insights.";
     }
 
-    if (appliances.length === 0) {
-        return "Add your appliances to get better consumption estimates and recommendations.";
+    if (consumptionRecords.length === 0) {
+        return "You have appliances added! Submit your monthly consumption data to see actual usage and get accurate predictions.";
     }
 
     if (monthlyChange > 20) {
@@ -313,7 +345,7 @@ const getRecommendation = (consumptionRecords, appliances, monthlyChange) => {
         return "Great job! Your energy consumption is decreasing. Keep up the good work.";
     }
 
-    return "Your energy usage is stable. Consider adding more appliances for better tracking.";
+    return "Your energy usage is stable. Keep submitting monthly data for better predictions.";
 };
 
 // Helper function to get system health status
