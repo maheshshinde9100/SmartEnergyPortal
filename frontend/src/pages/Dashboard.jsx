@@ -136,32 +136,7 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* Info Banner for Estimated Data */}
-      {!isAdmin && dashboardData.currentMonth?.isEstimated && (
-        <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
-          <div className="flex items-start space-x-3">
-            <AlertCircle size={20} className="text-orange-600 mt-0.5 flex-shrink-0" />
-            <div className="flex-1">
-              <h4 className="text-sm font-semibold text-orange-900 mb-1">
-                Showing Estimated Consumption
-              </h4>
-              <p className="text-sm text-orange-800">
-                You have {dashboardData.appliances?.total || 0} appliance(s) added, but no consumption data submitted yet. 
-                The values shown are estimates based on typical appliance usage. 
-                <button 
-                  onClick={() => toast('Consumption submission feature coming soon! For now, use the sample data script: npm run add-sample-consumption', { 
-                    icon: '📝',
-                    duration: 6000 
-                  })}
-                  className="font-medium underline ml-1 hover:text-orange-900"
-                >
-                  Submit your actual consumption data
-                </button> to see accurate statistics and predictions.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
+
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
