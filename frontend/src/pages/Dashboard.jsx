@@ -149,7 +149,10 @@ const Dashboard = () => {
                 You have {dashboardData.appliances?.total || 0} appliance(s) added, but no consumption data submitted yet. 
                 The values shown are estimates based on typical appliance usage. 
                 <button 
-                  onClick={() => toast.info('Consumption submission feature coming soon! For now, use the sample data script: npm run add-sample-consumption', { duration: 6000 })}
+                  onClick={() => toast('Consumption submission feature coming soon! For now, use the sample data script: npm run add-sample-consumption', { 
+                    icon: '📝',
+                    duration: 6000 
+                  })}
                   className="font-medium underline ml-1 hover:text-orange-900"
                 >
                   Submit your actual consumption data
@@ -425,11 +428,17 @@ const Dashboard = () => {
           <button 
             onClick={() => {
               if (isAdmin) {
-                toast.info('Admin users can view consumption data in Analytics');
+                toast('Admin users can view consumption data in Analytics', {
+                  icon: '📊',
+                  duration: 4000
+                });
                 navigate('/analytics');
               } else {
                 // For now, show message until Consumption page is created
-                toast.info('Consumption submission feature coming soon! For now, consumption data can be added via API or scripts.', { duration: 5000 });
+                toast('Consumption submission feature coming soon! For now, consumption data can be added via API or scripts.', { 
+                  icon: '⚡',
+                  duration: 5000 
+                });
                 // TODO: navigate('/consumption') when page is created
               }
             }}
@@ -460,12 +469,18 @@ const Dashboard = () => {
           <button 
             onClick={() => {
               if (isAdmin) {
-                toast.info('View user recommendations in User Management');
+                toast('View user recommendations in User Management', {
+                  icon: '👥',
+                  duration: 4000
+                });
                 navigate('/admin');
               } else if (dashboardData?.insights?.recommendation) {
                 toast.success(dashboardData.insights.recommendation, { duration: 6000 });
               } else {
-                toast.info('Add appliances and submit consumption data to get personalized recommendations');
+                toast('Add appliances and submit consumption data to get personalized recommendations', {
+                  icon: '💡',
+                  duration: 5000
+                });
               }
             }}
             className="flex items-center justify-center p-4 bg-orange-50 hover:bg-orange-100 rounded-lg transition-colors"

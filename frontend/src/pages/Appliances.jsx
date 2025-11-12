@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Search, Zap, Edit, Trash2, X } from 'lucide-react';
+import { Plus, Search, Zap, Edit, Trash2, X, AlertCircle } from 'lucide-react';
 import { useAppliances } from '../context/ApplianceContext';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import toast from 'react-hot-toast';
@@ -16,8 +16,12 @@ const Appliances = () => {
     description: '',
     minHours: '',
     maxHours: '',
-    peakUsageTime: ''
+    peakUsageTime: '',
+    estimatedDailyHours: '' // New field for user's estimated daily usage
   });
+  
+  const [showEstimatedConsumption, setShowEstimatedConsumption] = useState(false);
+  const [useCustomHours, setUseCustomHours] = useState(false);
 
   const {
     appliances,
@@ -40,6 +44,51 @@ const Appliances = () => {
       ...prev,
       [name]: value
     }));
+    
+    // Show estimated consumption when wattage is entered
+    if (name === 'defaultWattage' && value) {
+      setShowEstimatedConsumption(true);
+      // Auto-calculate estimated daily hours if not custom
+      if (!useCustomHours && !formData.estimatedDailyHours) {
+        const avgHours = formData.minHours && formData.maxHours 
+          ? (parseFloat(formData.minHours) + parseFloat(formData.maxHours)) / 2
+          : 4; // Default 4 hours
+        setFormData(prev => ({
+          ...prev,
+          estimatedDailyHours: avgHours.toString()
+        }));
+      }
+    }
+  };
+  
+  // Calculate estimated daily consumption
+  const calculateEstimatedConsumption = () => {
+    const wattage = parseFloat(formData.defaultWattage) || 0;
+    const hours = parseFloat(formData.estimatedDailyHours) || 
+                  (formData.minHours && formData.maxHours 
+                    ? (parseFloat(formData.minHours) + parseFloat(formData.maxHours)) / 2 
+                    : 4);
+    return ((wattage * hours) / 1000).toFixed(2); // kWh
+  };
+  
+  const calculateMonthlyConsumption = () => {
+    return (parseFloat(calculateEstimatedConsumption()) * 30).toFixed(2);
+  };
+  
+  const calculateMonthlyCost = () => {
+    const monthlyKwh = parseFloat(calculateMonthlyConsumption());
+    // Simple tariff calculation
+    let cost = 0;
+    if (monthlyKwh <= 100) {
+      cost = monthlyKwh * 3.5;
+    } else if (monthlyKwh <= 300) {
+      cost = 100 * 3.5 + (monthlyKwh - 100) * 4.5;
+    } else if (monthlyKwh <= 500) {
+      cost = 100 * 3.5 + 200 * 4.5 + (monthlyKwh - 300) * 6.0;
+    } else {
+      cost = 100 * 3.5 + 200 * 4.5 + 200 * 6.0 + (monthlyKwh - 500) * 7.5;
+    }
+    return cost.toFixed(2);
   };
 
   const handleSubmit = async (e) => {
@@ -59,7 +108,9 @@ const Appliances = () => {
 
       setShowAddModal(false);
       setEditingAppliance(null);
-      setFormData({ name: '', category: 'Lighting', defaultWattage: '', description: '', minHours: '', maxHours: '', peakUsageTime: '' });
+      setFormData({ name: '', category: 'Lighting', defaultWattage: '', description: '', minHours: '', maxHours: '', peakUsageTime: '', estimatedDailyHours: '' });
+      setShowEstimatedConsumption(false);
+      setUseCustomHours(false);
     } catch (error) {
       // Error saving appliance
     }
@@ -67,6 +118,9 @@ const Appliances = () => {
 
   const handleEdit = (appliance) => {
     setEditingAppliance(appliance);
+    const avgHours = appliance.usageHints?.minHours && appliance.usageHints?.maxHours
+      ? ((appliance.usageHints.minHours + appliance.usageHints.maxHours) / 2).toString()
+      : '4';
     setFormData({
       name: appliance.name,
       category: appliance.category,
@@ -74,8 +128,10 @@ const Appliances = () => {
       description: appliance.description || '',
       minHours: appliance.usageHints?.minHours?.toString() || '',
       maxHours: appliance.usageHints?.maxHours?.toString() || '',
-      peakUsageTime: appliance.usageHints?.peakUsageTime || ''
+      peakUsageTime: appliance.usageHints?.peakUsageTime || '',
+      estimatedDailyHours: avgHours
     });
+    setShowEstimatedConsumption(true);
     setShowAddModal(true);
   };
 
@@ -88,7 +144,9 @@ const Appliances = () => {
   const closeModal = () => {
     setShowAddModal(false);
     setEditingAppliance(null);
-    setFormData({ name: '', category: 'Lighting', defaultWattage: '', description: '', minHours: '', maxHours: '', peakUsageTime: '' });
+    setFormData({ name: '', category: 'Lighting', defaultWattage: '', description: '', minHours: '', maxHours: '', peakUsageTime: '', estimatedDailyHours: '' });
+    setShowEstimatedConsumption(false);
+    setUseCustomHours(false);
   };
 
   const filteredAppliances = appliances.filter(appliance => {
@@ -400,6 +458,90 @@ const Appliances = () => {
                     maxLength="500"
                   />
                 </div>
+
+                {/* Estimated Consumption Section */}
+                {showEstimatedConsumption && formData.defaultWattage && (
+                  <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl p-6 border-2 border-blue-200">
+                    <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                      <Zap size={20} className="text-blue-600 mr-2" />
+                      Estimated Daily Consumption
+                    </h4>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                      <div className="bg-white rounded-lg p-4 shadow-sm">
+                        <p className="text-xs text-gray-600 mb-1">Daily Usage</p>
+                        <p className="text-2xl font-bold text-blue-600">
+                          {calculateEstimatedConsumption()} kWh
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">per day</p>
+                      </div>
+                      
+                      <div className="bg-white rounded-lg p-4 shadow-sm">
+                        <p className="text-xs text-gray-600 mb-1">Monthly Usage</p>
+                        <p className="text-2xl font-bold text-purple-600">
+                          {calculateMonthlyConsumption()} kWh
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">per month</p>
+                      </div>
+                      
+                      <div className="bg-white rounded-lg p-4 shadow-sm">
+                        <p className="text-xs text-gray-600 mb-1">Estimated Cost</p>
+                        <p className="text-2xl font-bold text-green-600">
+                          ₹{calculateMonthlyCost()}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">per month</p>
+                      </div>
+                    </div>
+
+                    <div className="bg-white rounded-lg p-4 shadow-sm">
+                      <div className="flex items-center justify-between mb-3">
+                        <label className="text-sm font-medium text-gray-700">
+                          Your Estimated Daily Usage (hours)
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setUseCustomHours(!useCustomHours)}
+                          className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                        >
+                          {useCustomHours ? 'Use Auto' : 'Customize'}
+                        </button>
+                      </div>
+                      
+                      <div className="flex items-center space-x-4">
+                        <input
+                          type="number"
+                          name="estimatedDailyHours"
+                          value={formData.estimatedDailyHours}
+                          onChange={(e) => {
+                            setUseCustomHours(true);
+                            handleInputChange(e);
+                          }}
+                          className="form-input flex-1"
+                          placeholder="e.g., 6"
+                          min="0"
+                          max="24"
+                          step="0.5"
+                        />
+                        <span className="text-sm text-gray-600">hours/day</span>
+                      </div>
+                      
+                      <p className="text-xs text-gray-500 mt-2">
+                        {useCustomHours 
+                          ? 'Using your custom hours for calculation' 
+                          : `Auto-calculated based on typical usage (${formData.minHours || 2}-${formData.maxHours || 8}h)`
+                        }
+                      </p>
+                    </div>
+
+                    <div className="mt-4 flex items-start space-x-2 text-sm text-gray-600">
+                      <AlertCircle size={16} className="text-blue-600 mt-0.5 flex-shrink-0" />
+                      <p>
+                        These estimates will be saved with your appliance and used for dashboard calculations. 
+                        You can always edit them later.
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 <div className="flex justify-end space-x-3 pt-4">
                   <button

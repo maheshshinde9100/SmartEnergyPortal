@@ -69,6 +69,18 @@ const applianceSchema = new mongoose.Schema({
     typicalUsage: {
       type: String,
       trim: true
+    },
+    estimatedDailyHours: {
+      type: Number,
+      min: 0,
+      max: 24,
+      default: function() {
+        // Auto-calculate if not provided
+        if (this.minHours !== undefined && this.maxHours !== undefined) {
+          return (this.minHours + this.maxHours) / 2;
+        }
+        return 4; // Default 4 hours
+      }
     }
   }
 }, {

@@ -112,10 +112,11 @@ const getUserDashboardData = async (userId) => {
     
     if (userAppliances.length > 0) {
         userAppliances.forEach(appliance => {
-            // Use average of min and max hours, or default to 4 hours
-            const avgHours = appliance.usageHints?.minHours 
-                ? (appliance.usageHints.minHours + (appliance.usageHints.maxHours || appliance.usageHints.minHours)) / 2
-                : 4;
+            // Use user's estimated daily hours if available, otherwise calculate average
+            const avgHours = appliance.usageHints?.estimatedDailyHours 
+                || (appliance.usageHints?.minHours 
+                    ? (appliance.usageHints.minHours + (appliance.usageHints.maxHours || appliance.usageHints.minHours)) / 2
+                    : 4);
             const dailyUsage = (avgHours * appliance.defaultWattage) / 1000; // kWh per day
             const monthlyUsage = dailyUsage * 30;
             estimatedMonthlyConsumption += monthlyUsage;
