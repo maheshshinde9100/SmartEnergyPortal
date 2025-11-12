@@ -3,6 +3,14 @@ import Appliance from '../models/Appliance.js';
 // Get all appliances
 export const getAllAppliances = async (req, res) => {
   try {
+    // If user is not authenticated, return empty array
+    if (!req.user) {
+      return res.json({
+        success: true,
+        data: []
+      });
+    }
+
     const userId = req.user._id;
     
     // Get only user's own appliances
@@ -30,6 +38,15 @@ export const getAllAppliances = async (req, res) => {
 export const getAppliancesByCategory = async (req, res) => {
   try {
     const { category } = req.params;
+    
+    // If user is not authenticated, return empty array
+    if (!req.user) {
+      return res.json({
+        success: true,
+        data: []
+      });
+    }
+
     const userId = req.user._id;
 
     const appliances = await Appliance.find({ 

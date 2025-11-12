@@ -15,6 +15,7 @@
     "test-login": "node scripts/testLoginAPI.js",
     "fix-admin": "node scripts/fixAdminPassword.js",
     "setup-admin": "node scripts/setupAdmin.js",
+    "setup-admin-user": "node scripts/setupAdminUser.js",
     "seed-db": "node utils/seedDatabase.js"
   },
   "dependencies": {

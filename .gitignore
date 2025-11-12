@@ -1,1 +1,9 @@
 .vscode
+SETUP_COMPLETE.md
+backend/scripts/setupAdminUser.js
+backend/scripts/updateUser.js
+backend/utils/seedDatabase.js
+.gitignore
+ADMIN_SETUP_COMPLETE.md
+FINAL_SETUP_SUMMARY.md
+VERIFICATION_CHECKLIST.md
