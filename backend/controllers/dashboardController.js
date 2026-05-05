@@ -1,6 +1,23 @@
 import User from '../models/User.js';
 import Appliance from '../models/Appliance.js';
 import Consumption from '../models/Consumption.js';
+import TariffRate from '../models/TariffRate.js';
+
+const calculateBillFromSlabs = (units, slabs = []) => {
+    let bill = 0;
+    let remainingUnits = units;
+    const sortedSlabs = [...slabs].sort((a, b) => a.minUnits - b.minUnits);
+
+    for (const slab of sortedSlabs) {
+        if (remainingUnits <= 0) break;
+        const slabRange = slab.maxUnits - slab.minUnits + 1;
+        const slabUnits = Math.min(remainingUnits, slabRange);
+        bill += slabUnits * slab.ratePerUnit;
+        remainingUnits -= slabUnits;
+    }
+
+    return bill;
+};
 
 // Get user dashboard data
 export const getDashboardData = async (req, res) => {
@@ -40,6 +57,7 @@ export const getDashboardData = async (req, res) => {
 
 // Get regular user dashboard data
 const getUserDashboardData = async (userId) => {
+    const currentTariff = await TariffRate.getCurrentTariff();
     // Get user's consumption records
     const consumptionRecords = await Consumption.find({ userId })
         .sort({ year: -1, month: -1 })
@@ -124,19 +142,14 @@ const getUserDashboardData = async (userId) => {
         
         // Calculate estimated bill using tariff slabs
         if (estimatedMonthlyConsumption > 0) {
-            const slabs = [
-                { min: 0, max: 100, rate: 3.5 },
-                { min: 101, max: 300, rate: 4.5 },
-                { min: 301, max: 500, rate: 6.0 },
-                { min: 501, max: Infinity, rate: 7.5 }
-            ];
-            let remainingUnits = estimatedMonthlyConsumption;
-            for (const slab of slabs) {
-                if (remainingUnits <= 0) break;
-                const slabUnits = Math.min(remainingUnits, slab.max - slab.min + 1);
-                estimatedMonthlyCost += slabUnits * slab.rate;
-                remainingUnits -= slabUnits;
-            }
+            estimatedMonthlyCost = currentTariff
+                ? currentTariff.calculateBill(estimatedMonthlyConsumption)
+                : calculateBillFromSlabs(estimatedMonthlyConsumption, [
+                    { minUnits: 0, maxUnits: 100, ratePerUnit: 3.5 },
+                    { minUnits: 101, maxUnits: 300, ratePerUnit: 4.5 },
+                    { minUnits: 301, maxUnits: 500, ratePerUnit: 6.0 },
+                    { minUnits: 501, maxUnits: 999999, ratePerUnit: 7.5 }
+                ]);
         }
     }
 
