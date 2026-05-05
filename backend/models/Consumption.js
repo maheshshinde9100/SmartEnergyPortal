@@ -35,6 +35,21 @@ const consumptionSchema = new mongoose.Schema({
       min: 0,
       max: 24
     },
+    usageSlots: [{
+      type: Number,
+      min: 0,
+      max: 23
+    }],
+    customTimeRange: {
+      start: {
+        type: String,
+        trim: true
+      },
+      end: {
+        type: String,
+        trim: true
+      }
+    },
     customWattage: {
       type: Number,
       min: 0
