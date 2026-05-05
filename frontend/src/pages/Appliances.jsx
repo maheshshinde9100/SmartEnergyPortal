@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Plus, Search, Zap, Edit, Trash2, X, AlertCircle } from 'lucide-react';
 import { useAppliances } from '../context/ApplianceContext';
 import LoadingSpinner from '../components/common/LoadingSpinner';
+import { consumptionAPI } from '../services/api';
 import toast from 'react-hot-toast';
 
 const Appliances = () => {
@@ -22,6 +23,7 @@ const Appliances = () => {
   
   const [showEstimatedConsumption, setShowEstimatedConsumption] = useState(false);
   const [useCustomHours, setUseCustomHours] = useState(false);
+  const [currentTariff, setCurrentTariff] = useState(null);
 
   const {
     appliances,
@@ -36,7 +38,19 @@ const Appliances = () => {
 
   useEffect(() => {
     fetchAppliances();
+    fetchTariff();
   }, []);
+
+  const fetchTariff = async () => {
+    try {
+      const response = await consumptionAPI.getTariff();
+      if (response.success) {
+        setCurrentTariff(response.data);
+      }
+    } catch (error) {
+      setCurrentTariff(null);
+    }
+  };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -77,16 +91,20 @@ const Appliances = () => {
   
   const calculateMonthlyCost = () => {
     const monthlyKwh = parseFloat(calculateMonthlyConsumption());
-    // Simple tariff calculation
+    const slabs = currentTariff?.slabs || [
+      { minUnits: 0, maxUnits: 100, ratePerUnit: 3.5 },
+      { minUnits: 101, maxUnits: 300, ratePerUnit: 4.5 },
+      { minUnits: 301, maxUnits: 500, ratePerUnit: 6.0 },
+      { minUnits: 501, maxUnits: 999999, ratePerUnit: 7.5 }
+    ];
+
     let cost = 0;
-    if (monthlyKwh <= 100) {
-      cost = monthlyKwh * 3.5;
-    } else if (monthlyKwh <= 300) {
-      cost = 100 * 3.5 + (monthlyKwh - 100) * 4.5;
-    } else if (monthlyKwh <= 500) {
-      cost = 100 * 3.5 + 200 * 4.5 + (monthlyKwh - 300) * 6.0;
-    } else {
-      cost = 100 * 3.5 + 200 * 4.5 + 200 * 6.0 + (monthlyKwh - 500) * 7.5;
+    let remainingUnits = monthlyKwh;
+    for (const slab of slabs) {
+      if (remainingUnits <= 0) break;
+      const slabUnits = Math.min(remainingUnits, slab.maxUnits - slab.minUnits + 1);
+      cost += slabUnits * slab.ratePerUnit;
+      remainingUnits -= slabUnits;
     }
     return cost.toFixed(2);
   };

@@ -113,6 +113,7 @@ export const consumptionAPI = {
   getHistory: (params) => api.get('/consumption/history', { params }),
   getCurrent: () => api.get('/consumption/current'),
   getPredictions: () => api.get('/consumption/predictions'),
+  getTariff: () => api.get('/consumption/tariff'),
   update: (id, data) => api.put(`/consumption/${id}`, data),
   delete: (id) => api.delete(`/consumption/${id}`),
 };

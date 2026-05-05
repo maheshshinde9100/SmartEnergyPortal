@@ -71,7 +71,7 @@ export const getAppliancesByCategory = async (req, res) => {
 // Create appliance
 export const createAppliance = async (req, res) => {
   try {
-    const { name, category, defaultWattage, description, minHours, maxHours, peakUsageTime } = req.body;
+    const { name, category, defaultWattage, description, minHours, maxHours, peakUsageTime, estimatedDailyHours } = req.body;
     const userId = req.user._id;
 
     const appliance = new Appliance({
@@ -85,6 +85,7 @@ export const createAppliance = async (req, res) => {
         minHours: minHours ? parseFloat(minHours) : 0,
         maxHours: maxHours ? parseFloat(maxHours) : 24,
         peakUsageTime: peakUsageTime || '',
+        estimatedDailyHours: estimatedDailyHours ? parseFloat(estimatedDailyHours) : undefined,
         typicalUsage: `Typically used ${minHours || 0}-${maxHours || 24} hours per day${peakUsageTime ? ` during ${peakUsageTime}` : ''}`
       }
     });
@@ -110,7 +111,7 @@ export const createAppliance = async (req, res) => {
 export const updateAppliance = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, category, defaultWattage, description, minHours, maxHours, peakUsageTime } = req.body;
+    const { name, category, defaultWattage, description, minHours, maxHours, peakUsageTime, estimatedDailyHours } = req.body;
     const userId = req.user._id;
 
     const appliance = await Appliance.findOne({
@@ -136,6 +137,9 @@ export const updateAppliance = async (req, res) => {
         minHours: minHours ? parseFloat(minHours) : appliance.usageHints?.minHours || 0,
         maxHours: maxHours ? parseFloat(maxHours) : appliance.usageHints?.maxHours || 24,
         peakUsageTime: peakUsageTime !== undefined ? peakUsageTime : appliance.usageHints?.peakUsageTime || '',
+        estimatedDailyHours: estimatedDailyHours
+          ? parseFloat(estimatedDailyHours)
+          : appliance.usageHints?.estimatedDailyHours,
         typicalUsage: `Typically used ${minHours || appliance.usageHints?.minHours || 0}-${maxHours || appliance.usageHints?.maxHours || 24} hours per day${(peakUsageTime || appliance.usageHints?.peakUsageTime) ? ` during ${peakUsageTime || appliance.usageHints?.peakUsageTime}` : ''}`
       };
     }

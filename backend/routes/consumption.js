@@ -8,7 +8,8 @@ import {
   getCurrentConsumption,
   updateConsumption,
   deleteConsumption,
-  getConsumptionPredictions
+  getConsumptionPredictions,
+  getCurrentTariffForUser
 } from '../controllers/consumptionController.js';
 
 const router = express.Router();
@@ -38,6 +39,26 @@ const consumptionValidation = [
   body('appliances.*.dailyHours')
     .isFloat({ min: 0, max: 24 })
     .withMessage('Daily hours must be between 0-24'),
+
+  body('appliances.*.usageSlots')
+    .optional()
+    .isArray()
+    .withMessage('Usage slots must be an array'),
+
+  body('appliances.*.usageSlots.*')
+    .optional()
+    .isInt({ min: 0, max: 23 })
+    .withMessage('Usage slot must be between 0 and 23'),
+
+  body('appliances.*.customTimeRange.start')
+    .optional()
+    .matches(/^([01]\d|2[0-3]):([0-5]\d)$/)
+    .withMessage('Custom start time must be in HH:mm format'),
+
+  body('appliances.*.customTimeRange.end')
+    .optional()
+    .matches(/^([01]\d|2[0-3]):([0-5]\d)$/)
+    .withMessage('Custom end time must be in HH:mm format'),
   
   body('appliances.*.customWattage')
     .optional()
@@ -50,6 +71,7 @@ router.post('/', authenticate, consumptionValidation, validate, submitConsumptio
 router.get('/history', authenticate, getConsumptionHistory);
 router.get('/current', authenticate, getCurrentConsumption);
 router.get('/predictions', authenticate, getConsumptionPredictions);
+router.get('/tariff', authenticate, getCurrentTariffForUser);
 router.put('/:id', authenticate, consumptionValidation, validate, updateConsumption);
 router.delete('/:id', authenticate, deleteConsumption);
 

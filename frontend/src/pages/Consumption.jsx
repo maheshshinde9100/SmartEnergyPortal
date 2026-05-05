@@ -8,10 +8,11 @@ import toast from 'react-hot-toast';
 
 const Consumption = () => {
   const navigate = useNavigate();
-  const { appliances, loading: appliancesLoading } = useAppliances();
+  const { appliances, isLoading: appliancesLoading } = useAppliances();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [consumptionHistory, setConsumptionHistory] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
+  const [currentTariff, setCurrentTariff] = useState(null);
 
   const currentDate = new Date();
   const [formData, setFormData] = useState({
@@ -22,7 +23,19 @@ const Consumption = () => {
 
   useEffect(() => {
     fetchConsumptionHistory();
+    fetchCurrentTariff();
   }, []);
+
+  const fetchCurrentTariff = async () => {
+    try {
+      const response = await consumptionAPI.getTariff();
+      if (response.success) {
+        setCurrentTariff(response.data);
+      }
+    } catch (error) {
+      setCurrentTariff(null);
+    }
+  };
 
   const fetchConsumptionHistory = async () => {
     try {
@@ -43,7 +56,7 @@ const Consumption = () => {
       ...formData,
       appliances: [
         ...formData.appliances,
-        { applianceId: '', quantity: 1, dailyHours: 4 }
+        { applianceId: '', quantity: 1, dailyHours: 1, usageSlots: [], customTimeRange: { start: '', end: '' } }
       ]
     });
   };
@@ -61,12 +74,37 @@ const Consumption = () => {
     setFormData({ ...formData, appliances: updated });
   };
 
+  const toggleHourlySlot = (index, hour) => {
+    const updated = [...formData.appliances];
+    const existingSlots = updated[index].usageSlots || [];
+    const hasSlot = existingSlots.includes(hour);
+    const nextSlots = hasSlot
+      ? existingSlots.filter((slot) => slot !== hour)
+      : [...existingSlots, hour];
+    const sortedSlots = nextSlots.sort((a, b) => a - b);
+
+    updated[index].usageSlots = sortedSlots;
+    updated[index].dailyHours = sortedSlots.length || updated[index].dailyHours;
+    setFormData({ ...formData, appliances: updated });
+  };
+
+  const updateCustomTime = (index, field, value) => {
+    const updated = [...formData.appliances];
+    updated[index].customTimeRange = {
+      ...updated[index].customTimeRange,
+      [field]: value
+    };
+    setFormData({ ...formData, appliances: updated });
+  };
+
   const calculateEstimate = () => {
     let totalUnits = 0;
     formData.appliances.forEach(appUsage => {
       const appliance = appliances.find(a => a._id === appUsage.applianceId);
       if (appliance) {
-        const dailyConsumption = (appliance.defaultWattage * appUsage.dailyHours) / 1000;
+        const selectedSlotHours = appUsage.usageSlots?.length || 0;
+        const effectiveDailyHours = selectedSlotHours > 0 ? selectedSlotHours : appUsage.dailyHours;
+        const dailyConsumption = (appliance.defaultWattage * effectiveDailyHours) / 1000;
         const monthlyConsumption = dailyConsumption * 30 * appUsage.quantity;
         totalUnits += monthlyConsumption;
       }
@@ -74,18 +112,18 @@ const Consumption = () => {
 
     // Calculate bill using MSEB tariff
     let bill = 0;
-    const slabs = [
-      { min: 0, max: 100, rate: 3.5 },
-      { min: 101, max: 300, rate: 4.5 },
-      { min: 301, max: 500, rate: 6.0 },
-      { min: 501, max: Infinity, rate: 7.5 }
+    const slabs = currentTariff?.slabs || [
+      { minUnits: 0, maxUnits: 100, ratePerUnit: 3.5 },
+      { minUnits: 101, maxUnits: 300, ratePerUnit: 4.5 },
+      { minUnits: 301, maxUnits: 500, ratePerUnit: 6.0 },
+      { minUnits: 501, maxUnits: 999999, ratePerUnit: 7.5 }
     ];
 
     let remainingUnits = totalUnits;
     for (const slab of slabs) {
       if (remainingUnits <= 0) break;
-      const slabUnits = Math.min(remainingUnits, slab.max - slab.min + 1);
-      bill += slabUnits * slab.rate;
+      const slabUnits = Math.min(remainingUnits, slab.maxUnits - slab.minUnits + 1);
+      bill += slabUnits * slab.ratePerUnit;
       remainingUnits -= slabUnits;
     }
 
@@ -223,7 +261,7 @@ const Consumption = () => {
                 onChange={(e) => setFormData({ ...formData, year: parseInt(e.target.value) })}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               >
-                {[2024, 2025, 2026].map(year => (
+                {Array.from({ length: 7 }, (_, idx) => currentDate.getFullYear() - 5 + idx).map(year => (
                   <option key={year} value={year}>
                     {year}
                   </option>
@@ -258,8 +296,9 @@ const Consumption = () => {
             ) : (
               <div className="space-y-3">
                 {formData.appliances.map((appUsage, index) => (
-                  <div key={index} className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg">
-                    <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div key={index} className="p-4 bg-gray-50 rounded-lg">
+                    <div className="flex items-start gap-3">
+                      <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3">
                       <select
                         value={appUsage.applianceId}
                         onChange={(e) => updateAppliance(index, 'applianceId', e.target.value)}
@@ -295,16 +334,71 @@ const Consumption = () => {
                         className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                         required
                       />
-                    </div>
+                      </div>
 
-                    <button
+                      <button
                       type="button"
                       onClick={() => removeAppliance(index)}
                       className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                       title="Remove"
-                    >
+                      >
                       <Trash2 size={20} />
-                    </button>
+                      </button>
+                    </div>
+
+                    <div className="mt-4">
+                      <p className="text-sm font-medium text-gray-700 mb-2">1-Hour Slots (multiple choice)</p>
+                      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
+                        {Array.from({ length: 24 }, (_, hour) => {
+                          const startHour = hour % 12 === 0 ? 12 : hour % 12;
+                          const endHourRaw = (hour + 1) % 24;
+                          const endHour = endHourRaw % 12 === 0 ? 12 : endHourRaw % 12;
+                          const startPeriod = hour < 12 ? 'AM' : 'PM';
+                          const endPeriod = endHourRaw < 12 ? 'AM' : 'PM';
+                          const label = `${startHour}${startPeriod} - ${endHour}${endPeriod}`;
+                          const selected = appUsage.usageSlots?.includes(hour);
+
+                          return (
+                            <button
+                              key={`${index}-${hour}`}
+                              type="button"
+                              onClick={() => toggleHourlySlot(index, hour)}
+                              className={`px-2 py-1 text-xs rounded-md border transition-colors ${
+                                selected
+                                  ? 'bg-primary-600 border-primary-600 text-white'
+                                  : 'bg-white border-gray-300 text-gray-700 hover:border-primary-400'
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <p className="text-xs text-gray-500 mt-2">
+                        Selected slots: {appUsage.usageSlots?.length || 0} hour(s)
+                      </p>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Custom Start Time (optional)</label>
+                        <input
+                          type="time"
+                          value={appUsage.customTimeRange?.start || ''}
+                          onChange={(e) => updateCustomTime(index, 'start', e.target.value)}
+                          className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent w-full"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Custom End Time (optional)</label>
+                        <input
+                          type="time"
+                          value={appUsage.customTimeRange?.end || ''}
+                          onChange={(e) => updateCustomTime(index, 'end', e.target.value)}
+                          className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent w-full"
+                        />
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>

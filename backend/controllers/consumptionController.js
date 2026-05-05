@@ -2,6 +2,47 @@ import Consumption from '../models/Consumption.js';
 import Appliance from '../models/Appliance.js';
 import TariffRate from '../models/TariffRate.js';
 
+const parseTimeToMinutes = (timeString) => {
+  if (!timeString || typeof timeString !== 'string' || !timeString.includes(':')) return null;
+  const [hoursStr, minutesStr] = timeString.split(':');
+  const hours = parseInt(hoursStr, 10);
+  const minutes = parseInt(minutesStr, 10);
+
+  if (
+    Number.isNaN(hours) ||
+    Number.isNaN(minutes) ||
+    hours < 0 ||
+    hours > 23 ||
+    minutes < 0 ||
+    minutes > 59
+  ) {
+    return null;
+  }
+
+  return hours * 60 + minutes;
+};
+
+const resolveDailyHours = (appUsage) => {
+  if (Array.isArray(appUsage.usageSlots) && appUsage.usageSlots.length > 0) {
+    return appUsage.usageSlots.length;
+  }
+
+  if (appUsage.customTimeRange?.start && appUsage.customTimeRange?.end) {
+    const startMinutes = parseTimeToMinutes(appUsage.customTimeRange.start);
+    const endMinutes = parseTimeToMinutes(appUsage.customTimeRange.end);
+    if (startMinutes !== null && endMinutes !== null) {
+      const diff = endMinutes >= startMinutes
+        ? endMinutes - startMinutes
+        : (24 * 60 - startMinutes) + endMinutes;
+      if (diff > 0) {
+        return Math.round((diff / 60) * 100) / 100;
+      }
+    }
+  }
+
+  return appUsage.dailyHours;
+};
+
 // Submit consumption data
 export const submitConsumption = async (req, res) => {
   try {
@@ -31,7 +72,10 @@ export const submitConsumption = async (req, res) => {
 
     // Validate and populate appliance data
     const applianceIds = appliances.map(app => app.applianceId);
-    const applianceData = await Appliance.find({ _id: { $in: applianceIds } });
+    const applianceData = await Appliance.find({
+      _id: { $in: applianceIds },
+      createdBy: userId
+    });
 
     if (applianceData.length !== applianceIds.length) {
       return res.status(400).json({
@@ -45,7 +89,8 @@ export const submitConsumption = async (req, res) => {
     const processedAppliances = appliances.map(appUsage => {
       const appliance = applianceData.find(app => app._id.toString() === appUsage.applianceId);
       const wattage = appUsage.customWattage || appliance.defaultWattage;
-      const dailyConsumption = (wattage * appUsage.dailyHours) / 1000; // kWh
+      const dailyHours = resolveDailyHours(appUsage);
+      const dailyConsumption = (wattage * dailyHours) / 1000; // kWh
       const monthlyConsumption = dailyConsumption * 30; // Assume 30 days
       const totalApplianceConsumption = monthlyConsumption * appUsage.quantity;
       
@@ -54,7 +99,9 @@ export const submitConsumption = async (req, res) => {
       return {
         applianceId: appUsage.applianceId,
         quantity: appUsage.quantity,
-        dailyHours: appUsage.dailyHours,
+        dailyHours,
+        usageSlots: Array.isArray(appUsage.usageSlots) ? [...new Set(appUsage.usageSlots)] : [],
+        customTimeRange: appUsage.customTimeRange || {},
         customWattage: appUsage.customWattage
       };
     });
@@ -180,7 +227,10 @@ export const updateConsumption = async (req, res) => {
 
     // Validate and populate appliance data
     const applianceIds = appliances.map(app => app.applianceId);
-    const applianceData = await Appliance.find({ _id: { $in: applianceIds } });
+    const applianceData = await Appliance.find({
+      _id: { $in: applianceIds },
+      createdBy: userId
+    });
 
     if (applianceData.length !== applianceIds.length) {
       return res.status(400).json({
@@ -194,7 +244,8 @@ export const updateConsumption = async (req, res) => {
     const processedAppliances = appliances.map(appUsage => {
       const appliance = applianceData.find(app => app._id.toString() === appUsage.applianceId);
       const wattage = appUsage.customWattage || appliance.defaultWattage;
-      const dailyConsumption = (wattage * appUsage.dailyHours) / 1000;
+      const dailyHours = resolveDailyHours(appUsage);
+      const dailyConsumption = (wattage * dailyHours) / 1000;
       const monthlyConsumption = dailyConsumption * 30;
       const totalApplianceConsumption = monthlyConsumption * appUsage.quantity;
       
@@ -203,7 +254,9 @@ export const updateConsumption = async (req, res) => {
       return {
         applianceId: appUsage.applianceId,
         quantity: appUsage.quantity,
-        dailyHours: appUsage.dailyHours,
+        dailyHours,
+        usageSlots: Array.isArray(appUsage.usageSlots) ? [...new Set(appUsage.usageSlots)] : [],
+        customTimeRange: appUsage.customTimeRange || {},
         customWattage: appUsage.customWattage
       };
     });
@@ -343,6 +396,28 @@ export const getConsumptionPredictions = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to generate predictions'
+    });
+  }
+};
+
+export const getCurrentTariffForUser = async (req, res) => {
+  try {
+    const currentTariff = await TariffRate.getCurrentTariff();
+    if (!currentTariff) {
+      return res.json({
+        success: true,
+        data: null
+      });
+    }
+
+    res.json({
+      success: true,
+      data: currentTariff
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch current tariff'
     });
   }
 };

@@ -107,7 +107,7 @@ const Admin = () => {
 
   useEffect(() => {
     fetchAdminData();
-  }, []);
+  }, [selectedPeriod]);
 
   const fetchAdminData = async () => {
     setIsLoading(true);
@@ -166,12 +166,12 @@ const Admin = () => {
   const handleTariffSubmit = async (e) => {
     e.preventDefault();
     try {
-      // Mock API call
+      await adminAPI.updateTariff(newTariff);
       toast.success('Tariff updated successfully');
       setShowTariffModal(false);
       fetchAdminData();
     } catch (error) {
-      toast.error('Failed to update tariff');
+      toast.error(error.response?.data?.message || 'Failed to update tariff');
     }
   };
 
@@ -200,7 +200,56 @@ const Admin = () => {
 
   const exportData = async (type) => {
     try {
-      // Mock export functionality
+      let csvContent = '';
+      let fileName = `${type}-report.csv`;
+
+      if (type === 'users') {
+        const rows = (filteredUsers || []).map((user) => [
+          `${user.profile?.firstName || ''} ${user.profile?.lastName || ''}`.trim(),
+          user.email || '',
+          user.msebCustomerId || '',
+          user.isActive ? 'Active' : 'Inactive',
+          user.lastLogin ? new Date(user.lastLogin).toISOString() : 'Never',
+          user.consumption?.latest?.totalUnits || 0
+        ]);
+        csvContent = [['Name', 'Email', 'MSEB ID', 'Status', 'Last Login', 'Latest Consumption (kWh)'], ...rows]
+          .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+          .join('\n');
+      } else if (type === 'consumption' || type === 'regional') {
+        const rows = (adminData.analytics?.monthlyTrends || []).map((item) => [
+          item.month,
+          item.year,
+          item.totalConsumption || 0,
+          item.totalBill || 0,
+          item.userCount || 0
+        ]);
+        csvContent = [['Month', 'Year', 'Total Consumption (kWh)', 'Total Bill', 'User Count'], ...rows]
+          .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+          .join('\n');
+      } else if (type === 'revenue') {
+        const rows = (adminData.analytics?.monthlyTrends || []).map((item) => [
+          item.month,
+          item.year,
+          item.totalBill || 0
+        ]);
+        csvContent = [['Month', 'Year', 'Revenue'], ...rows]
+          .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+          .join('\n');
+      } else {
+        csvContent = [['Metric', 'Value'], ['Total Users', adminData.overview.users?.total || 0]]
+          .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+          .join('\n');
+      }
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', fileName);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
       toast.success(`${type} data exported successfully`);
     } catch (error) {
       toast.error('Failed to export data');

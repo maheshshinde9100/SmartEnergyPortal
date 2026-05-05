@@ -32,7 +32,12 @@ const applianceValidation = [
     .optional()
     .trim()
     .isLength({ max: 500 })
-    .withMessage('Description cannot exceed 500 characters')
+    .withMessage('Description cannot exceed 500 characters'),
+
+  body('estimatedDailyHours')
+    .optional()
+    .isFloat({ min: 0, max: 24 })
+    .withMessage('Estimated daily hours must be between 0 and 24')
 ];
 
 // Routes
