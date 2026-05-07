@@ -165,11 +165,35 @@ router.get('/peak-hours', authenticate, async (req, res) => {
         }
       }
 
-      // Next: customTimeRange (single start/end) distribute by minute overlap
-      const startMinutes = parseTimeToMinutes(appUsage.customTimeRange?.start);
-      const endMinutes = parseTimeToMinutes(appUsage.customTimeRange?.end);
-      if (startMinutes !== null && endMinutes !== null) {
-        addMinutesRangeToHourlyBuckets(buckets, startMinutes, endMinutes, monthlyKwh);
+      // Next: timeRanges (multiple start/end ranges) distribute by minute overlap
+      if (Array.isArray(appUsage.timeRanges) && appUsage.timeRanges.length > 0) {
+        const validRanges = [];
+        let totalMinutes = 0;
+
+        appUsage.timeRanges.forEach(range => {
+          const startMinutes = parseTimeToMinutes(range.start);
+          const endMinutes = parseTimeToMinutes(range.end);
+          if (startMinutes !== null && endMinutes !== null) {
+            const diff = endMinutes >= startMinutes
+              ? endMinutes - startMinutes
+              : (24 * 60 - startMinutes) + endMinutes;
+            if (diff > 0) {
+              validRanges.push({ startMinutes, endMinutes, diff });
+              totalMinutes += diff;
+            }
+          }
+        });
+
+        if (totalMinutes > 0) {
+          validRanges.forEach((range) => {
+            addMinutesRangeToHourlyBuckets(
+              buckets,
+              range.startMinutes,
+              range.endMinutes,
+              monthlyKwh * (range.diff / totalMinutes)
+            );
+          });
+        }
         return;
       }
 

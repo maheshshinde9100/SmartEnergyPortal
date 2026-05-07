@@ -37,7 +37,22 @@ const applianceValidation = [
   body('estimatedDailyHours')
     .optional()
     .isFloat({ min: 0, max: 24 })
-    .withMessage('Estimated daily hours must be between 0 and 24')
+    .withMessage('Estimated daily hours must be between 0 and 24'),
+
+  body('usageIntervals')
+    .optional()
+    .isArray()
+    .withMessage('Usage intervals must be an array'),
+
+  body('usageIntervals.*.startTime')
+    .optional()
+    .matches(/^([01]\d|2[0-3]):([0-5]\d)$/)
+    .withMessage('Interval start time must be in HH:mm format'),
+
+  body('usageIntervals.*.endTime')
+    .optional()
+    .matches(/^([01]\d|2[0-3]):([0-5]\d)$/)
+    .withMessage('Interval end time must be in HH:mm format')
 ];
 
 // Routes

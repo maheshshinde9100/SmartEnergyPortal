@@ -56,7 +56,7 @@ const Consumption = () => {
       ...formData,
       appliances: [
         ...formData.appliances,
-        { applianceId: '', quantity: 1, dailyHours: 1, usageSlots: [], customTimeRange: { start: '', end: '' } }
+        { applianceId: '', quantity: 1, dailyHours: 1, usageSlots: [], timeRanges: [{ start: '', end: '' }] }
       ]
     });
   };
@@ -88,13 +88,24 @@ const Consumption = () => {
     setFormData({ ...formData, appliances: updated });
   };
 
-  const updateCustomTime = (index, field, value) => {
+  const updateTimeRange = (index, rangeIndex, field, value) => {
     const updated = [...formData.appliances];
-    updated[index].customTimeRange = {
-      ...updated[index].customTimeRange,
-      [field]: value
-    };
+    updated[index].timeRanges[rangeIndex][field] = value;
     setFormData({ ...formData, appliances: updated });
+  };
+
+  const addTimeRange = (index) => {
+    const updated = [...formData.appliances];
+    updated[index].timeRanges.push({ start: '', end: '' });
+    setFormData({ ...formData, appliances: updated });
+  };
+
+  const removeTimeRange = (index, rangeIndex) => {
+    const updated = [...formData.appliances];
+    if (updated[index].timeRanges.length > 1) {
+      updated[index].timeRanges.splice(rangeIndex, 1);
+      setFormData({ ...formData, appliances: updated });
+    }
   };
 
   const calculateEstimate = () => {
@@ -102,8 +113,24 @@ const Consumption = () => {
     formData.appliances.forEach(appUsage => {
       const appliance = appliances.find(a => a._id === appUsage.applianceId);
       if (appliance) {
-        const selectedSlotHours = appUsage.usageSlots?.length || 0;
-        const effectiveDailyHours = selectedSlotHours > 0 ? selectedSlotHours : appUsage.dailyHours;
+        let effectiveDailyHours = appUsage.dailyHours;
+
+        // Priority: usageSlots > timeRanges > dailyHours
+        if (appUsage.usageSlots?.length > 0) {
+          effectiveDailyHours = appUsage.usageSlots.length;
+        } else if (appUsage.timeRanges?.length > 0) {
+          effectiveDailyHours = appUsage.timeRanges.reduce((total, range) => {
+            if (range.start && range.end) {
+              const start = new Date(`2000-01-01T${range.start}`);
+              const end = new Date(`2000-01-01T${range.end}`);
+              let diff = (end - start) / (1000 * 60 * 60);
+              if (diff < 0) diff += 24; // Handle overnight ranges
+              return total + diff;
+            }
+            return total;
+          }, 0);
+        }
+
         const dailyConsumption = (appliance.defaultWattage * effectiveDailyHours) / 1000;
         const monthlyConsumption = dailyConsumption * 30 * appUsage.quantity;
         totalUnits += monthlyConsumption;
@@ -150,7 +177,16 @@ const Consumption = () => {
 
     try {
       setIsSubmitting(true);
-      const response = await consumptionAPI.submit(formData);
+      const payload = {
+        ...formData,
+        appliances: formData.appliances.map((app) => ({
+          ...app,
+          timeRanges: Array.isArray(app.timeRanges)
+            ? app.timeRanges.filter((range) => range.start && range.end)
+            : []
+        }))
+      };
+      const response = await consumptionAPI.submit(payload);
       
       if (response.success) {
         toast.success('Consumption data submitted successfully!');
@@ -379,25 +415,68 @@ const Consumption = () => {
                       </p>
                     </div>
 
-                    <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Custom Start Time (optional)</label>
-                        <input
-                          type="time"
-                          value={appUsage.customTimeRange?.start || ''}
-                          onChange={(e) => updateCustomTime(index, 'start', e.target.value)}
-                          className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent w-full"
-                        />
+                    <div className="mt-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="block text-sm font-medium text-gray-700">Time Usage Ranges</label>
+                        <button
+                          type="button"
+                          onClick={() => addTimeRange(index)}
+                          className="text-xs px-2 py-1 bg-green-600 text-white rounded hover:bg-green-700"
+                        >
+                          + Add Time Range
+                        </button>
                       </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Custom End Time (optional)</label>
-                        <input
-                          type="time"
-                          value={appUsage.customTimeRange?.end || ''}
-                          onChange={(e) => updateCustomTime(index, 'end', e.target.value)}
-                          className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent w-full"
-                        />
+                      <div className="space-y-2">
+                        {appUsage.timeRanges.map((range, rangeIndex) => (
+                          <div key={rangeIndex} className="flex items-center gap-2">
+                            <div className="flex-1 grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">
+                                  Start Time
+                                </label>
+                                <input
+                                  type="time"
+                                  value={range.start}
+                                  onChange={(e) => updateTimeRange(index, rangeIndex, 'start', e.target.value)}
+                                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent w-full"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">
+                                  End Time
+                                </label>
+                                <input
+                                  type="time"
+                                  value={range.end}
+                                  onChange={(e) => updateTimeRange(index, rangeIndex, 'end', e.target.value)}
+                                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent w-full"
+                                />
+                              </div>
+                            </div>
+                            {appUsage.timeRanges.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => removeTimeRange(index, rangeIndex)}
+                                className="p-1 text-red-600 hover:bg-red-50 rounded"
+                                title="Remove time range"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            )}
+                          </div>
+                        ))}
                       </div>
+                      <p className="text-xs text-gray-500 mt-2">
+                        Total hours from time ranges: {appUsage.timeRanges.reduce((total, range) => {
+                          if (range.start && range.end) {
+                            const start = new Date(`2000-01-01T${range.start}`);
+                            const end = new Date(`2000-01-01T${range.end}`);
+                            const diff = (end - start) / (1000 * 60 * 60);
+                            return total + (diff > 0 ? diff : diff + 24);
+                          }
+                          return total;
+                        }, 0).toFixed(2)} hours
+                      </p>
                     </div>
                   </div>
                 ))}

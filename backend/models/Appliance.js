@@ -66,20 +66,26 @@ const applianceSchema = new mongoose.Schema({
       enum: ['morning', 'afternoon', 'evening', 'night', 'all-day', ''],
       default: ''
     },
-    typicalUsage: {
-      type: String,
-      trim: true
-    },
+    usageIntervals: [{
+      startTime: {
+        type: String,
+        required: true
+      },
+      endTime: {
+        type: String,
+        required: true
+      }
+    }],
     estimatedDailyHours: {
       type: Number,
       min: 0,
       max: 24,
       default: function() {
-        // Auto-calculate if not provided
+        if (this.usageIntervals && this.usageIntervals.length > 0) return 0;
         if (this.minHours !== undefined && this.maxHours !== undefined) {
           return (this.minHours + this.maxHours) / 2;
         }
-        return 4; // Default 4 hours
+        return 4;
       }
     }
   }
@@ -103,11 +109,32 @@ applianceSchema.index({ isCustom: 1 });
 applianceSchema.index({ createdBy: 1 });
 applianceSchema.index({ name: 'text', description: 'text' });
 
-// Validation: maxHours should be greater than minHours
+// Validation and Hour Calculation
 applianceSchema.pre('save', function(next) {
   if (this.usageHints.maxHours < this.usageHints.minHours) {
-    next(new Error('Maximum usage hours must be greater than minimum usage hours'));
+    return next(new Error('Maximum usage hours must be greater than minimum usage hours'));
   }
+
+  // Calculate total hours from intervals if they exist
+  if (this.usageHints.usageIntervals && this.usageHints.usageIntervals.length > 0) {
+    let totalHours = 0;
+    this.usageHints.usageIntervals.forEach(interval => {
+      const [startH, startM] = interval.startTime.split(':').map(Number);
+      const [endH, endM] = interval.endTime.split(':').map(Number);
+      
+      let startDecimal = startH + (startM / 60);
+      let endDecimal = endH + (endM / 60);
+      
+      if (endDecimal < startDecimal) {
+        // Handles overnight intervals (e.g., 22:00 to 02:00)
+        totalHours += (24 - startDecimal) + endDecimal;
+      } else {
+        totalHours += (endDecimal - startDecimal);
+      }
+    });
+    this.usageHints.estimatedDailyHours = Math.min(24, parseFloat(totalHours.toFixed(2)));
+  }
+
   next();
 });
 

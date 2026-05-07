@@ -27,16 +27,24 @@ const resolveDailyHours = (appUsage) => {
     return appUsage.usageSlots.length;
   }
 
-  if (appUsage.customTimeRange?.start && appUsage.customTimeRange?.end) {
-    const startMinutes = parseTimeToMinutes(appUsage.customTimeRange.start);
-    const endMinutes = parseTimeToMinutes(appUsage.customTimeRange.end);
-    if (startMinutes !== null && endMinutes !== null) {
-      const diff = endMinutes >= startMinutes
-        ? endMinutes - startMinutes
-        : (24 * 60 - startMinutes) + endMinutes;
-      if (diff > 0) {
-        return Math.round((diff / 60) * 100) / 100;
+  if (Array.isArray(appUsage.timeRanges) && appUsage.timeRanges.length > 0) {
+    let totalMinutes = 0;
+    for (const timeRange of appUsage.timeRanges) {
+      if (timeRange.start && timeRange.end) {
+        const startMinutes = parseTimeToMinutes(timeRange.start);
+        const endMinutes = parseTimeToMinutes(timeRange.end);
+        if (startMinutes !== null && endMinutes !== null) {
+          const diff = endMinutes >= startMinutes
+            ? endMinutes - startMinutes
+            : (24 * 60 - startMinutes) + endMinutes;
+          if (diff > 0) {
+            totalMinutes += diff;
+          }
+        }
       }
+    }
+    if (totalMinutes > 0) {
+      return Math.round((totalMinutes / 60) * 100) / 100;
     }
   }
 
@@ -101,7 +109,7 @@ export const submitConsumption = async (req, res) => {
         quantity: appUsage.quantity,
         dailyHours,
         usageSlots: Array.isArray(appUsage.usageSlots) ? [...new Set(appUsage.usageSlots)] : [],
-        customTimeRange: appUsage.customTimeRange || {},
+        timeRanges: Array.isArray(appUsage.timeRanges) ? appUsage.timeRanges.filter(range => range.start && range.end) : [],
         customWattage: appUsage.customWattage
       };
     });
@@ -256,7 +264,7 @@ export const updateConsumption = async (req, res) => {
         quantity: appUsage.quantity,
         dailyHours,
         usageSlots: Array.isArray(appUsage.usageSlots) ? [...new Set(appUsage.usageSlots)] : [],
-        customTimeRange: appUsage.customTimeRange || {},
+        timeRanges: Array.isArray(appUsage.timeRanges) ? appUsage.timeRanges.filter(range => range.start && range.end) : [],
         customWattage: appUsage.customWattage
       };
     });
