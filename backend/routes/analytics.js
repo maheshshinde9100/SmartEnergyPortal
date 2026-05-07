@@ -5,6 +5,60 @@ import Appliance from '../models/Appliance.js';
 
 const router = express.Router();
 
+const parseTimeToMinutes = (timeString) => {
+  if (!timeString || typeof timeString !== 'string' || !timeString.includes(':')) return null;
+  const [hoursStr, minutesStr] = timeString.split(':');
+  const hours = parseInt(hoursStr, 10);
+  const minutes = parseInt(minutesStr, 10);
+  if (
+    Number.isNaN(hours) ||
+    Number.isNaN(minutes) ||
+    hours < 0 ||
+    hours > 23 ||
+    minutes < 0 ||
+    minutes > 59
+  ) {
+    return null;
+  }
+  return hours * 60 + minutes;
+};
+
+const addMinutesRangeToHourlyBuckets = (buckets, startMinutes, endMinutes, monthlyKwh) => {
+  if (!Array.isArray(buckets) || buckets.length !== 24) return;
+  if (typeof monthlyKwh !== 'number' || !Number.isFinite(monthlyKwh) || monthlyKwh <= 0) return;
+
+  const totalMinutes =
+    endMinutes >= startMinutes ? (endMinutes - startMinutes) : ((24 * 60 - startMinutes) + endMinutes);
+  if (totalMinutes <= 0) return;
+
+  for (let hour = 0; hour < 24; hour += 1) {
+    const hourStart = hour * 60;
+    const hourEnd = hourStart + 60;
+
+    let overlap = 0;
+    if (endMinutes >= startMinutes) {
+      const start = Math.max(startMinutes, hourStart);
+      const end = Math.min(endMinutes, hourEnd);
+      overlap = Math.max(0, end - start);
+    } else {
+      // crosses midnight: [start..1440) + [0..end)
+      const startA = Math.max(startMinutes, hourStart);
+      const endA = Math.min(24 * 60, hourEnd);
+      const overlapA = Math.max(0, endA - startA);
+
+      const startB = Math.max(0, hourStart);
+      const endB = Math.min(endMinutes, hourEnd);
+      const overlapB = Math.max(0, endB - startB);
+
+      overlap = overlapA + overlapB;
+    }
+
+    if (overlap > 0) {
+      buckets[hour] += (monthlyKwh * (overlap / totalMinutes));
+    }
+  }
+};
+
 // Get consumption trends
 router.get('/trends', authenticate, async (req, res) => {
   try {
@@ -69,19 +123,70 @@ router.get('/peak-hours', authenticate, async (req, res) => {
   try {
     const userId = req.user.id;
     
-    // Mock peak hours data - in real implementation, this would come from smart meter data
-    const peakHoursData = Array.from({ length: 24 }, (_, hour) => {
-      let consumption;
-      if (hour >= 6 && hour <= 8) consumption = 25 + Math.random() * 10; // Morning peak
-      else if (hour >= 18 && hour <= 21) consumption = 35 + Math.random() * 15; // Evening peak
-      else if (hour >= 22 || hour <= 5) consumption = 8 + Math.random() * 5; // Night low
-      else consumption = 15 + Math.random() * 8; // Day average
-      
-      return {
+    const latestConsumption = await Consumption.findOne({ userId })
+      .sort({ submittedAt: -1 })
+      .populate('appliances.applianceId');
+
+    if (!latestConsumption) {
+      const empty = Array.from({ length: 24 }, (_, hour) => ({
         hour: `${hour.toString().padStart(2, '0')}:00`,
-        consumption: Math.round(consumption * 10) / 10
-      };
+        consumption: 0
+      }));
+
+      return res.json({
+        success: true,
+        data: empty
+      });
+    }
+
+    const buckets = Array.from({ length: 24 }, () => 0);
+
+    latestConsumption.appliances.forEach((appUsage) => {
+      const appliance = appUsage.applianceId;
+      if (!appliance) return;
+
+      const wattage = appUsage.customWattage || appliance.defaultWattage || 0;
+      const quantity = appUsage.quantity || 1;
+      if (!wattage || wattage <= 0) return;
+
+      // Monthly kWh for the appliance (based on stored dailyHours)
+      const monthlyKwh = ((wattage * (appUsage.dailyHours || 0)) / 1000) * 30 * quantity;
+      if (!Number.isFinite(monthlyKwh) || monthlyKwh <= 0) return;
+
+      // Prefer usageSlots (explicit hourly selection)
+      if (Array.isArray(appUsage.usageSlots) && appUsage.usageSlots.length > 0) {
+        const uniqSlots = [...new Set(appUsage.usageSlots)].filter((h) => Number.isInteger(h) && h >= 0 && h <= 23);
+        if (uniqSlots.length > 0) {
+          const perHour = monthlyKwh / uniqSlots.length;
+          uniqSlots.forEach((h) => {
+            buckets[h] += perHour;
+          });
+          return;
+        }
+      }
+
+      // Next: customTimeRange (single start/end) distribute by minute overlap
+      const startMinutes = parseTimeToMinutes(appUsage.customTimeRange?.start);
+      const endMinutes = parseTimeToMinutes(appUsage.customTimeRange?.end);
+      if (startMinutes !== null && endMinutes !== null) {
+        addMinutesRangeToHourlyBuckets(buckets, startMinutes, endMinutes, monthlyKwh);
+        return;
+      }
+
+      // Fallback: distribute evenly across day based on dailyHours
+      const hours = Math.max(0, Math.min(24, appUsage.dailyHours || 0));
+      if (hours <= 0) return;
+      const perHour = monthlyKwh / hours;
+      for (let h = 0; h < 24; h += 1) {
+        // naive: assume usage could happen anytime; keep distribution flat
+        buckets[h] += perHour * (hours / 24);
+      }
     });
+
+    const peakHoursData = buckets.map((kwh, hour) => ({
+      hour: `${hour.toString().padStart(2, '0')}:00`,
+      consumption: Math.round(kwh * 10) / 10
+    }));
 
     res.json({
       success: true,
@@ -129,13 +234,38 @@ router.get('/comparisons', authenticate, async (req, res) => {
       };
     }).sort((a, b) => b.consumption - a.consumption);
 
-    // Mock seasonal data
-    const seasonalData = [
-      { season: 'Winter', consumption: 280, efficiency: 85 },
-      { season: 'Spring', consumption: 220, efficiency: 92 },
-      { season: 'Summer', consumption: 380, efficiency: 78 },
-      { season: 'Monsoon', consumption: 250, efficiency: 88 }
-    ];
+    // Seasonal data derived from consumption records (last 12 months)
+    const last12 = await Consumption.find({ userId })
+      .sort({ year: -1, month: -1 })
+      .limit(12);
+
+    const seasonOfMonth = (m) => {
+      // India-ish seasons for Maharashtra: Winter(Dec-Feb), Summer(Mar-May), Monsoon(Jun-Sep), Post-monsoon(Oct-Nov)
+      if ([12, 1, 2].includes(m)) return 'Winter';
+      if ([3, 4, 5].includes(m)) return 'Summer';
+      if ([6, 7, 8, 9].includes(m)) return 'Monsoon';
+      return 'Post-monsoon';
+    };
+
+    const seasonalAgg = new Map();
+    last12.forEach((rec) => {
+      const season = seasonOfMonth(rec.month);
+      const prev = seasonalAgg.get(season) || { season, consumption: 0, months: 0 };
+      prev.consumption += rec.totalUnits || 0;
+      prev.months += 1;
+      seasonalAgg.set(season, prev);
+    });
+
+    const seasonalData = Array.from(seasonalAgg.values()).map((s) => {
+      const avg = s.months > 0 ? (s.consumption / s.months) : 0;
+      // Efficiency is a placeholder heuristic until smart-meter / device-level telemetry exists
+      const efficiency = avg <= 0 ? 0 : Math.max(0, Math.min(100, 100 - (avg - 200) / 5));
+      return {
+        season: s.season,
+        consumption: Math.round(avg * 10) / 10,
+        efficiency: Math.round(efficiency)
+      };
+    });
 
     res.json({
       success: true,

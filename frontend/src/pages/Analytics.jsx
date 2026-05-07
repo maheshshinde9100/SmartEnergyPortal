@@ -53,7 +53,8 @@ const Analytics = () => {
         },
         efficiency: {
             score: 0,
-            recommendations: []
+            recommendations: [],
+            potentialSavings: 0
         }
     });
     const [isLoading, setIsLoading] = useState(true);
@@ -67,74 +68,34 @@ const Analytics = () => {
     const fetchAnalyticsData = async () => {
         setIsLoading(true);
         try {
-            // Mock data for now - replace with actual API calls
-            setTimeout(() => {
-                setAnalyticsData({
-                    trends: {
-                        monthly: [
-                            { month: 'Jan', consumption: 220, bill: 1650, prediction: 225 },
-                            { month: 'Feb', consumption: 195, bill: 1450, prediction: 200 },
-                            { month: 'Mar', consumption: 245, bill: 1850, prediction: 240 },
-                            { month: 'Apr', consumption: 280, bill: 2100, prediction: 275 },
-                            { month: 'May', consumption: 320, bill: 2400, prediction: 315 },
-                            { month: 'Jun', consumption: 350, bill: 2650, prediction: 345 }
-                        ],
-                        yearly: [
-                            { year: '2022', consumption: 2850, bill: 21500 },
-                            { year: '2023', consumption: 3120, bill: 23400 },
-                            { year: '2024', consumption: 2890, bill: 21800 }
-                        ]
-                    },
-                    peakHours: [
-                        { hour: '06:00', consumption: 25.5 },
-                        { hour: '07:00', consumption: 32.1 },
-                        { hour: '08:00', consumption: 28.7 },
-                        { hour: '09:00', consumption: 18.3 },
-                        { hour: '10:00', consumption: 15.2 },
-                        { hour: '11:00', consumption: 12.8 },
-                        { hour: '12:00', consumption: 22.4 },
-                        { hour: '13:00', consumption: 26.1 },
-                        { hour: '14:00', consumption: 24.8 },
-                        { hour: '15:00', consumption: 21.5 },
-                        { hour: '16:00', consumption: 19.7 },
-                        { hour: '17:00', consumption: 28.9 },
-                        { hour: '18:00', consumption: 45.2 },
-                        { hour: '19:00', consumption: 48.7 },
-                        { hour: '20:00', consumption: 42.3 },
-                        { hour: '21:00', consumption: 38.1 },
-                        { hour: '22:00', consumption: 32.5 },
-                        { hour: '23:00', consumption: 25.8 }
-                    ],
-                    comparisons: {
-                        appliances: [
-                            { name: 'Air Conditioner', consumption: 45.2, percentage: 35 },
-                            { name: 'Water Heater', consumption: 28.7, percentage: 22 },
-                            { name: 'Refrigerator', consumption: 22.1, percentage: 17 },
-                            { name: 'Lighting', consumption: 15.3, percentage: 12 },
-                            { name: 'TV & Electronics', consumption: 12.8, percentage: 10 },
-                            { name: 'Others', consumption: 5.9, percentage: 4 }
-                        ],
-                        seasonal: [
-                            { season: 'Winter', consumption: 280, efficiency: 85 },
-                            { season: 'Spring', consumption: 220, efficiency: 92 },
-                            { season: 'Summer', consumption: 380, efficiency: 78 },
-                            { season: 'Monsoon', consumption: 250, efficiency: 88 }
-                        ]
-                    },
-                    efficiency: {
-                        score: 78,
-                        recommendations: [
-                            'Consider upgrading to a 5-star rated AC to save 25% energy',
-                            'Use LED bulbs to reduce lighting consumption by 60%',
-                            'Set water heater temperature to 50°C for optimal efficiency',
-                            'Use appliances during off-peak hours (11 PM - 6 AM)'
-                        ]
-                    }
-                });
-                setIsLoading(false);
-            }, 1000);
+            const [trendsRes, peakRes, comparisonsRes, recRes] = await Promise.all([
+                analyticsAPI.getTrends({ period: selectedPeriod }),
+                analyticsAPI.getPeakHours(),
+                analyticsAPI.getComparisons(),
+                analyticsAPI.getRecommendations()
+            ]);
+
+            const monthly = trendsRes?.data?.monthly || [];
+            const peakHours = peakRes?.data || [];
+            const comparisons = comparisonsRes?.data || { appliances: [], seasonal: [] };
+            const efficiency = recRes?.data || { score: 0, recommendations: [], potentialSavings: 0 };
+
+            setAnalyticsData({
+                trends: { monthly, yearly: [] },
+                peakHours,
+                comparisons: {
+                    appliances: comparisons.appliances || [],
+                    seasonal: comparisons.seasonal || []
+                },
+                efficiency: {
+                    score: efficiency.score || 0,
+                    recommendations: efficiency.recommendations || [],
+                    potentialSavings: efficiency.potentialSavings || 0
+                }
+            });
         } catch (error) {
             // Failed to fetch analytics data
+        } finally {
             setIsLoading(false);
         }
     };
@@ -292,11 +253,13 @@ const Analytics = () => {
                         <div>
                             <p className="text-sm font-medium text-gray-600">Avg Monthly Usage</p>
                             <p className="text-2xl font-bold text-gray-900">
-                                {(analyticsData.trends.monthly.reduce((sum, item) => sum + item.consumption, 0) / analyticsData.trends.monthly.length).toFixed(1)} kWh
+                                {analyticsData.trends.monthly.length > 0
+                                    ? (analyticsData.trends.monthly.reduce((sum, item) => sum + (item.consumption || 0), 0) / analyticsData.trends.monthly.length).toFixed(1)
+                                    : '0.0'} kWh
                             </p>
                             <div className="flex items-center mt-2">
                                 <TrendingUp size={16} className="text-green-500" />
-                                <span className="text-sm text-green-600 ml-1">5.2% vs last period</span>
+                                    <span className="text-sm text-gray-500 ml-1">Based on selected period</span>
                             </div>
                         </div>
                         <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
@@ -310,10 +273,14 @@ const Analytics = () => {
                         <div>
                             <p className="text-sm font-medium text-gray-600">Peak Hour Usage</p>
                             <p className="text-2xl font-bold text-gray-900">
-                                {Math.max(...analyticsData.peakHours.map(h => h.consumption)).toFixed(1)} kWh
+                                {(analyticsData.peakHours.length > 0
+                                    ? Math.max(...analyticsData.peakHours.map(h => h.consumption || 0))
+                                    : 0).toFixed(1)} kWh
                             </p>
                             <p className="text-sm text-gray-500 mt-2">
-                                at {analyticsData.peakHours.find(h => h.consumption === Math.max(...analyticsData.peakHours.map(h => h.consumption)))?.hour}
+                                at {analyticsData.peakHours.length > 0
+                                    ? (analyticsData.peakHours.find(h => (h.consumption || 0) === Math.max(...analyticsData.peakHours.map(x => x.consumption || 0)))?.hour || '--:--')
+                                    : '--:--'}
                             </p>
                         </div>
                         <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
@@ -342,7 +309,7 @@ const Analytics = () => {
                     <div className="flex items-center justify-between">
                         <div>
                             <p className="text-sm font-medium text-gray-600">Cost Savings</p>
-                            <p className="text-2xl font-bold text-gray-900">₹2,450</p>
+                            <p className="text-2xl font-bold text-gray-900">₹{(analyticsData.efficiency.potentialSavings || 0).toLocaleString()}</p>
                             <p className="text-sm text-gray-500 mt-2">Potential monthly savings</p>
                         </div>
                         <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
@@ -438,7 +405,7 @@ const Analytics = () => {
                         <div className="flex items-center space-x-2">
                             <Target size={16} className="text-green-600" />
                             <span className="text-sm font-medium text-green-800">
-                                Implementing these recommendations could save up to ₹2,450/month
+                                Implementing these recommendations could save up to ₹{(analyticsData.efficiency.potentialSavings || 0).toLocaleString()}/month
                             </span>
                         </div>
                     </div>
