@@ -204,38 +204,40 @@ const getAdminDashboardData = async () => {
     const totalAppliances = await Appliance.countDocuments({ isActive: true });
     const totalConsumptionRecords = await Consumption.countDocuments();
 
-    // Get current month system consumption
-    const currentDate = new Date();
-    const currentMonth = currentDate.getMonth() + 1;
-    const currentYear = currentDate.getFullYear();
-
-    const currentMonthConsumption = await Consumption.aggregate([
-        { $match: { month: currentMonth, year: currentYear } },
+    // Use latest available period instead of strict calendar current month.
+    const monthlySummary = await Consumption.aggregate([
         {
             $group: {
-                _id: null,
+                _id: { month: '$month', year: '$year' },
                 totalUnits: { $sum: '$totalUnits' },
                 totalBill: { $sum: '$estimatedBill' },
-                userCount: { $addToSet: '$userId' }
+                userCountSet: { $addToSet: '$userId' }
             }
-        }
+        },
+        {
+            $project: {
+                month: '$_id.month',
+                year: '$_id.year',
+                totalUnits: 1,
+                totalBill: 1,
+                activeUsers: { $size: '$userCountSet' }
+            }
+        },
+        { $sort: { year: -1, month: -1 } },
+        { $limit: 2 }
     ]);
 
-    const systemConsumption = currentMonthConsumption[0]?.totalUnits || 0;
-    const systemRevenue = currentMonthConsumption[0]?.totalBill || 0;
-    const activeUsersThisMonth = currentMonthConsumption[0]?.userCount?.length || 0;
+    const latestPeriod = monthlySummary[0] || null;
+    const previousPeriod = monthlySummary[1] || null;
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-    // Get last month for comparison
-    const lastMonth = currentMonth === 1 ? 12 : currentMonth - 1;
-    const lastMonthYear = currentMonth === 1 ? currentYear - 1 : currentYear;
-
-    const lastMonthConsumption = await Consumption.aggregate([
-        { $match: { month: lastMonth, year: lastMonthYear } },
-        { $group: { _id: null, totalUnits: { $sum: '$totalUnits' } } }
-    ]);
-
-    const lastMonthTotal = lastMonthConsumption[0]?.totalUnits || 0;
-    const monthlyGrowth = lastMonthTotal > 0 ? ((systemConsumption - lastMonthTotal) / lastMonthTotal * 100) : 0;
+    const systemConsumption = latestPeriod?.totalUnits || 0;
+    const systemRevenue = latestPeriod?.totalBill || 0;
+    const activeUsersThisMonth = latestPeriod?.activeUsers || 0;
+    const previousConsumption = previousPeriod?.totalUnits || 0;
+    const monthlyGrowth = previousConsumption > 0
+        ? ((systemConsumption - previousConsumption) / previousConsumption) * 100
+        : 0;
 
     // Get recent user registrations (last 30 days)
     const thirtyDaysAgo = new Date();
@@ -246,9 +248,13 @@ const getAdminDashboardData = async () => {
         createdAt: { $gte: thirtyDaysAgo }
     });
 
-    // Get top consuming users this month
+    // Get top consuming users for latest available period
+    const latestPeriodMatch = latestPeriod
+        ? { month: latestPeriod.month, year: latestPeriod.year }
+        : null;
+
     const topUsers = await Consumption.aggregate([
-        { $match: { month: currentMonth, year: currentYear } },
+        ...(latestPeriodMatch ? [{ $match: latestPeriodMatch }] : []),
         {
             $group: {
                 _id: '$userId',
@@ -328,7 +334,9 @@ const getAdminDashboardData = async () => {
             revenue: Math.round(systemRevenue * 100) / 100,
             activeUsers: activeUsersThisMonth,
             growth: Math.round(monthlyGrowth * 100) / 100,
-            trend: monthlyGrowth > 5 ? 'increasing' : monthlyGrowth < -5 ? 'decreasing' : 'stable'
+            trend: monthlyGrowth > 5 ? 'increasing' : monthlyGrowth < -5 ? 'decreasing' : 'stable',
+            periodLabel: latestPeriod ? `${monthNames[(latestPeriod.month || 1) - 1]} ${latestPeriod.year}` : 'No data',
+            comparisonLabel: previousPeriod ? `${monthNames[(previousPeriod.month || 1) - 1]} ${previousPeriod.year}` : null
         },
         topUsers,
         monthlyTrends,
@@ -364,6 +372,7 @@ const getRecommendation = (consumptionRecords, appliances, monthlyChange) => {
 
 // Helper function to get system health status
 const getSystemHealth = (growth, activeUsers, totalUsers) => {
+    if (!totalUsers) return 'needs_attention';
     const userEngagement = (activeUsers / totalUsers) * 100;
 
     if (userEngagement > 80 && Math.abs(growth) < 20) {
@@ -388,7 +397,7 @@ const getSystemAlerts = (growth, activeUsers, totalUsers) => {
         });
     }
 
-    if (activeUsers / totalUsers < 0.3) {
+    if (totalUsers > 0 && (activeUsers / totalUsers) < 0.3) {
         alerts.push({
             type: 'info',
             message: 'Low user engagement - consider user activation campaigns'
