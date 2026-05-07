@@ -164,12 +164,15 @@ export const getConsumptionAnalytics = async (req, res) => {
       case '1year':
         startDate.setFullYear(startDate.getFullYear() - 1);
         break;
+      case '2years':
+        startDate.setFullYear(startDate.getFullYear() - 2);
+        break;
       default:
         startDate.setMonth(startDate.getMonth() - 6);
     }
 
     // Monthly consumption trends
-    const monthlyTrends = await Consumption.aggregate([
+    let monthlyTrends = await Consumption.aggregate([
       {
         $match: {
           $or: [
@@ -200,6 +203,32 @@ export const getConsumptionAnalytics = async (req, res) => {
       },
       { $sort: { year: 1, month: 1 } }
     ]);
+
+    // Fallback: if selected window has no data, return latest available 12 months.
+    if (monthlyTrends.length === 0) {
+      monthlyTrends = await Consumption.aggregate([
+        {
+          $group: {
+            _id: { month: '$month', year: '$year' },
+            totalConsumption: { $sum: '$totalUnits' },
+            totalBill: { $sum: '$estimatedBill' },
+            userCount: { $addToSet: '$userId' }
+          }
+        },
+        {
+          $project: {
+            month: '$_id.month',
+            year: '$_id.year',
+            totalConsumption: 1,
+            totalBill: 1,
+            userCount: { $size: '$userCount' }
+          }
+        },
+        { $sort: { year: -1, month: -1 } },
+        { $limit: 12 },
+        { $sort: { year: 1, month: 1 } }
+      ]);
+    }
 
     // Regional consumption
     const regionalConsumption = await User.aggregate([
@@ -278,22 +307,8 @@ export const getConsumptionAnalytics = async (req, res) => {
 // Get system-wide predictions with advanced algorithms
 export const getSystemPredictions = async (req, res) => {
   try {
-    // Get all consumption data for the last 12 months for better prediction accuracy
-    const twelveMonthsAgo = new Date();
-    twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
-
+    // Get latest available 12 months (not strictly tied to current date window).
     const historicalData = await Consumption.aggregate([
-      {
-        $match: {
-          $or: [
-            { year: { $gt: twelveMonthsAgo.getFullYear() } },
-            { 
-              year: twelveMonthsAgo.getFullYear(),
-              month: { $gte: twelveMonthsAgo.getMonth() + 1 }
-            }
-          ]
-        }
-      },
       {
         $group: {
           _id: { month: '$month', year: '$year' },
@@ -313,8 +328,27 @@ export const getSystemPredictions = async (req, res) => {
           avgConsumptionPerUser: 1
         }
       },
+      { $sort: { year: -1, month: -1 } },
+      { $limit: 12 },
       { $sort: { year: 1, month: 1 } }
     ]);
+
+    if (historicalData.length === 1) {
+      const only = historicalData[0];
+      return res.json({
+        success: true,
+        data: {
+          nextMonth: {
+            consumption: Math.round(only.totalConsumption || 0),
+            revenue: Math.round(only.totalBill || 0),
+            users: only.userCount || 0
+          },
+          confidence: 45,
+          trend: 'stable',
+          historicalData
+        }
+      });
+    }
 
     if (historicalData.length < 2) {
       return res.json({
@@ -397,8 +431,10 @@ export const getSystemPredictions = async (req, res) => {
     );
 
     // Revenue prediction based on consumption and current tariff
-    const avgRevenuePerUnit = recentData.reduce((sum, data) => 
-      sum + (data.totalBill / data.totalConsumption), 0) / recentData.length;
+    const avgRevenuePerUnit = recentData.length > 0
+      ? recentData.reduce((sum, data) =>
+        sum + (data.totalConsumption > 0 ? (data.totalBill / data.totalConsumption) : 0), 0) / recentData.length
+      : 0;
     const predictedRevenue = combinedPrediction * avgRevenuePerUnit;
 
     // Calculate confidence based on data consistency and amount
@@ -513,9 +549,18 @@ export const getCurrentTariff = async (req, res) => {
     const currentTariff = await TariffRate.getCurrentTariff();
     
     if (!currentTariff) {
-      return res.status(404).json({
-        success: false,
-        message: 'No active tariff found'
+      return res.json({
+        success: true,
+        data: {
+          slabs: [
+            { minUnits: 0, maxUnits: 100, ratePerUnit: 3.5 },
+            { minUnits: 101, maxUnits: 300, ratePerUnit: 4.5 },
+            { minUnits: 301, maxUnits: 500, ratePerUnit: 6.0 },
+            { minUnits: 501, maxUnits: 999999, ratePerUnit: 7.5 }
+          ],
+          effectiveFrom: null,
+          description: 'Default tariff (no custom tariff configured yet)'
+        }
       });
     }
 
@@ -567,6 +612,49 @@ export const toggleUserStatus = async (req, res) => {
 // Get peak usage analysis
 export const getPeakUsageAnalysis = async (req, res) => {
   try {
+    const parseTimeToMinutes = (time) => {
+      if (!time || typeof time !== 'string' || !time.includes(':')) return null;
+      const [h, m] = time.split(':').map(Number);
+      if (Number.isNaN(h) || Number.isNaN(m) || h < 0 || h > 23 || m < 0 || m > 59) return null;
+      return (h * 60) + m;
+    };
+
+    const addRangeToBuckets = (buckets, startMinutes, endMinutes, monthlyKwh) => {
+      const totalMinutes = endMinutes >= startMinutes
+        ? endMinutes - startMinutes
+        : ((24 * 60 - startMinutes) + endMinutes);
+      if (totalMinutes <= 0 || monthlyKwh <= 0) return;
+
+      for (let hour = 0; hour < 24; hour += 1) {
+        const hourStart = hour * 60;
+        const hourEnd = hourStart + 60;
+        let overlap = 0;
+
+        if (endMinutes >= startMinutes) {
+          const s = Math.max(startMinutes, hourStart);
+          const e = Math.min(endMinutes, hourEnd);
+          overlap = Math.max(0, e - s);
+        } else {
+          const s1 = Math.max(startMinutes, hourStart);
+          const e1 = Math.min(24 * 60, hourEnd);
+          const s2 = Math.max(0, hourStart);
+          const e2 = Math.min(endMinutes, hourEnd);
+          overlap = Math.max(0, e1 - s1) + Math.max(0, e2 - s2);
+        }
+
+        if (overlap > 0) {
+          buckets[hour] += monthlyKwh * (overlap / totalMinutes);
+        }
+      }
+    };
+
+    const getPeriodFromHour = (hour) => {
+      if (hour >= 6 && hour < 12) return 'morning';
+      if (hour >= 12 && hour < 18) return 'afternoon';
+      if (hour >= 18 && hour < 22) return 'evening';
+      return 'night';
+    };
+
     // Get all consumption data with appliance details
     const consumptionData = await Consumption.find({})
       .populate({
@@ -577,14 +665,15 @@ export const getPeakUsageAnalysis = async (req, res) => {
       .sort({ year: -1, month: -1 })
       .limit(1000); // Limit for performance
 
-    // Analyze peak usage by time periods
+    const hourBuckets = Array.from({ length: 24 }, () => 0);
+
+    // Analyze peak usage dynamically from user-entered schedule data
     const peakAnalysis = {
       byTimeOfDay: {
         morning: { totalUsage: 0, appliances: {}, userCount: 0 },
         afternoon: { totalUsage: 0, appliances: {}, userCount: 0 },
         evening: { totalUsage: 0, appliances: {}, userCount: 0 },
-        night: { totalUsage: 0, appliances: {}, userCount: 0 },
-        allDay: { totalUsage: 0, appliances: {}, userCount: 0 }
+        night: { totalUsage: 0, appliances: {}, userCount: 0 }
       },
       byCategory: {},
       topPeakAppliances: [],
@@ -603,49 +692,97 @@ export const getPeakUsageAnalysis = async (req, res) => {
         const appliance = appUsage.applianceId;
         if (!appliance) return;
 
-        const peakTime = appliance.usageHints?.peakUsageTime || 'all-day';
         const category = appliance.category;
-        const dailyConsumption = (appliance.defaultWattage * appUsage.dailyHours) / 1000; // kWh
+        const wattage = appUsage.customWattage || appliance.defaultWattage || 0;
+        const dailyConsumption = (wattage * appUsage.dailyHours) / 1000; // kWh
         const monthlyConsumption = dailyConsumption * 30 * appUsage.quantity;
+        if (!Number.isFinite(monthlyConsumption) || monthlyConsumption <= 0) return;
 
-        // Peak time analysis
-        if (peakAnalysis.byTimeOfDay[peakTime]) {
-          peakAnalysis.byTimeOfDay[peakTime].totalUsage += monthlyConsumption;
-          peakAnalysis.byTimeOfDay[peakTime].userCount++;
-          
-          if (!peakAnalysis.byTimeOfDay[peakTime].appliances[appliance.name]) {
-            peakAnalysis.byTimeOfDay[peakTime].appliances[appliance.name] = {
-              usage: 0,
-              count: 0,
-              category: category,
-              avgWattage: appliance.defaultWattage
-            };
+        const usageContributionByPeriod = { morning: 0, afternoon: 0, evening: 0, night: 0 };
+        const hourContribByAppliance = Array.from({ length: 24 }, () => 0);
+
+        const usageSlots = Array.isArray(appUsage.usageSlots)
+          ? [...new Set(appUsage.usageSlots)].filter((h) => Number.isInteger(h) && h >= 0 && h <= 23)
+          : [];
+
+        if (usageSlots.length > 0) {
+          const perHour = monthlyConsumption / usageSlots.length;
+          usageSlots.forEach((hour) => {
+            hourBuckets[hour] += perHour;
+            hourContribByAppliance[hour] += perHour;
+          });
+        } else if (Array.isArray(appUsage.timeRanges) && appUsage.timeRanges.length > 0) {
+          const validRanges = [];
+          let totalRangeMinutes = 0;
+          appUsage.timeRanges.forEach((range) => {
+            const startMinutes = parseTimeToMinutes(range.start);
+            const endMinutes = parseTimeToMinutes(range.end);
+            if (startMinutes === null || endMinutes === null) return;
+            const diff = endMinutes >= startMinutes
+              ? endMinutes - startMinutes
+              : ((24 * 60 - startMinutes) + endMinutes);
+            if (diff <= 0) return;
+            validRanges.push({ startMinutes, endMinutes, diff });
+            totalRangeMinutes += diff;
+          });
+
+          if (totalRangeMinutes > 0) {
+            validRanges.forEach((range) => {
+              const rangeKwh = monthlyConsumption * (range.diff / totalRangeMinutes);
+              addRangeToBuckets(hourBuckets, range.startMinutes, range.endMinutes, rangeKwh);
+              addRangeToBuckets(hourContribByAppliance, range.startMinutes, range.endMinutes, rangeKwh);
+            });
           }
-          peakAnalysis.byTimeOfDay[peakTime].appliances[appliance.name].usage += monthlyConsumption;
-          peakAnalysis.byTimeOfDay[peakTime].appliances[appliance.name].count++;
+        } else {
+          const perHour = monthlyConsumption / 24;
+          for (let h = 0; h < 24; h += 1) {
+            hourBuckets[h] += perHour;
+            hourContribByAppliance[h] += perHour;
+          }
         }
+
+        for (let hour = 0; hour < 24; hour += 1) {
+          if (hourContribByAppliance[hour] <= 0) continue;
+          const period = getPeriodFromHour(hour);
+          usageContributionByPeriod[period] += hourContribByAppliance[hour];
+        }
+
+        Object.entries(usageContributionByPeriod).forEach(([period, usage]) => {
+          if (usage <= 0) return;
+          peakAnalysis.byTimeOfDay[period].totalUsage += usage;
+          peakAnalysis.byTimeOfDay[period].userCount++;
+          if (!peakAnalysis.byTimeOfDay[period].appliances[appliance.name]) {
+            peakAnalysis.byTimeOfDay[period].appliances[appliance.name] = { usage: 0, count: 0, category, avgWattage: wattage };
+          }
+          peakAnalysis.byTimeOfDay[period].appliances[appliance.name].usage += usage;
+          peakAnalysis.byTimeOfDay[period].appliances[appliance.name].count++;
+        });
 
         // Category analysis
         if (!peakAnalysis.byCategory[category]) {
           peakAnalysis.byCategory[category] = {
             totalUsage: 0,
-            peakTimes: { morning: 0, afternoon: 0, evening: 0, night: 0, allDay: 0 },
+            peakTimes: { morning: 0, afternoon: 0, evening: 0, night: 0 },
             appliances: {}
           };
         }
         peakAnalysis.byCategory[category].totalUsage += monthlyConsumption;
-        peakAnalysis.byCategory[category].peakTimes[peakTime] += monthlyConsumption;
+        Object.entries(usageContributionByPeriod).forEach(([period, usage]) => {
+          peakAnalysis.byCategory[category].peakTimes[period] += usage;
+        });
 
         // Regional analysis
         if (!peakAnalysis.regionalPeakUsage[userCity]) {
           peakAnalysis.regionalPeakUsage[userCity] = {
             totalUsage: 0,
-            peakTimes: { morning: 0, afternoon: 0, evening: 0, night: 0, allDay: 0 },
+            peakTimes: { morning: 0, afternoon: 0, evening: 0, night: 0 },
             userCount: new Set()
           };
         }
         peakAnalysis.regionalPeakUsage[userCity].totalUsage += monthlyConsumption;
-        peakAnalysis.regionalPeakUsage[userCity].peakTimes[peakTime] += monthlyConsumption;
+        Object.entries(usageContributionByPeriod).forEach(([period, usage]) => {
+          peakAnalysis.regionalPeakUsage[userCity].peakTimes[period] += usage;
+        });
         peakAnalysis.regionalPeakUsage[userCity].userCount.add(userId);
       });
     });
@@ -673,24 +810,13 @@ export const getPeakUsageAnalysis = async (req, res) => {
       .sort((a, b) => b.usage - a.usage)
       .slice(0, 10);
 
-    // Calculate peak hours (simplified simulation)
-    const peakHours = [
-      { hour: '06:00-08:00', consumption: 0, period: 'morning' },
-      { hour: '08:00-10:00', consumption: 0, period: 'morning' },
-      { hour: '10:00-12:00', consumption: 0, period: 'morning' },
-      { hour: '12:00-14:00', consumption: 0, period: 'afternoon' },
-      { hour: '14:00-16:00', consumption: 0, period: 'afternoon' },
-      { hour: '16:00-18:00', consumption: 0, period: 'afternoon' },
-      { hour: '18:00-20:00', consumption: 0, period: 'evening' },
-      { hour: '20:00-22:00', consumption: 0, period: 'evening' },
-      { hour: '22:00-00:00', consumption: 0, period: 'night' },
-      { hour: '00:00-06:00', consumption: 0, period: 'night' }
-    ];
-
-    // Distribute usage across hours based on peak times
-    peakHours.forEach(hourData => {
-      const periodUsage = peakAnalysis.byTimeOfDay[hourData.period]?.totalUsage || 0;
-      hourData.consumption = Math.round((periodUsage / 3) * 100) / 100; // Divide by 3 for 3 time slots per period
+    const peakHours = hourBuckets.map((value, hour) => {
+      const nextHour = (hour + 1) % 24;
+      return {
+        hour: `${hour.toString().padStart(2, '0')}:00-${nextHour.toString().padStart(2, '0')}:00`,
+        consumption: Math.round(value * 100) / 100,
+        period: getPeriodFromHour(hour)
+      };
     });
 
     res.json({

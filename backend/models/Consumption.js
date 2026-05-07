@@ -40,16 +40,18 @@ const consumptionSchema = new mongoose.Schema({
       min: 0,
       max: 23
     }],
-    customTimeRange: {
+    timeRanges: [{
       start: {
         type: String,
-        trim: true
+        trim: true,
+        required: true
       },
       end: {
         type: String,
-        trim: true
+        trim: true,
+        required: true
       }
-    },
+    }],
     customWattage: {
       type: Number,
       min: 0

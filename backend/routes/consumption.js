@@ -50,15 +50,21 @@ const consumptionValidation = [
     .isInt({ min: 0, max: 23 })
     .withMessage('Usage slot must be between 0 and 23'),
 
-  body('appliances.*.customTimeRange.start')
+  body('appliances.*.timeRanges')
     .optional()
-    .matches(/^([01]\d|2[0-3]):([0-5]\d)$/)
-    .withMessage('Custom start time must be in HH:mm format'),
-
-  body('appliances.*.customTimeRange.end')
-    .optional()
-    .matches(/^([01]\d|2[0-3]):([0-5]\d)$/)
-    .withMessage('Custom end time must be in HH:mm format'),
+    .isArray()
+    .withMessage('Time ranges must be an array')
+    .bail()
+    .custom((ranges) => {
+      const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
+      return ranges.every((range) => {
+        const hasStart = typeof range?.start === 'string' && range.start.trim().length > 0;
+        const hasEnd = typeof range?.end === 'string' && range.end.trim().length > 0;
+        if (!hasStart && !hasEnd) return true;
+        return hasStart && hasEnd && timeRegex.test(range.start) && timeRegex.test(range.end);
+      });
+    })
+    .withMessage('Each time range must include valid start and end values in HH:mm format'),
   
   body('appliances.*.customWattage')
     .optional()

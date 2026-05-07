@@ -55,7 +55,7 @@ const Admin = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('all');
-  const [selectedPeriod, setSelectedPeriod] = useState('6months');
+  const [selectedPeriod, setSelectedPeriod] = useState('1year');
 
   const [adminData, setAdminData] = useState({
     overview: {

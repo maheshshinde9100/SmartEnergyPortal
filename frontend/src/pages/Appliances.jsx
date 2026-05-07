@@ -18,7 +18,8 @@ const Appliances = () => {
     minHours: '',
     maxHours: '',
     peakUsageTime: '',
-    estimatedDailyHours: '' // New field for user's estimated daily usage
+    estimatedDailyHours: '',
+    usageIntervals: [] // New field for multiple time usage
   });
   
   const [showEstimatedConsumption, setShowEstimatedConsumption] = useState(false);
@@ -74,14 +75,66 @@ const Appliances = () => {
       }
     }
   };
+
+  const addInterval = () => {
+    setFormData(prev => ({
+      ...prev,
+      usageIntervals: [...prev.usageIntervals, { startTime: '09:00', endTime: '10:00' }]
+    }));
+  };
+
+  const removeInterval = (index) => {
+    setFormData(prev => ({
+      ...prev,
+      usageIntervals: prev.usageIntervals.filter((_, i) => i !== index)
+    }));
+  };
+
+  const handleIntervalChange = (index, field, value) => {
+    const updatedIntervals = [...formData.usageIntervals];
+    updatedIntervals[index][field] = value;
+    setFormData(prev => ({
+      ...prev,
+      usageIntervals: updatedIntervals
+    }));
+  };
+
+  const calculateHoursFromIntervals = (intervals) => {
+    if (!intervals || intervals.length === 0) return 0;
+    
+    let total = 0;
+    intervals.forEach(interval => {
+      if (!interval.startTime || !interval.endTime) return;
+      
+      const [startH, startM] = interval.startTime.split(':').map(Number);
+      const [endH, endM] = interval.endTime.split(':').map(Number);
+      
+      let startDecimal = startH + (startM / 60);
+      let endDecimal = endH + (endM / 60);
+      
+      if (endDecimal < startDecimal) {
+        total += (24 - startDecimal) + endDecimal;
+      } else {
+        total += (endDecimal - startDecimal);
+      }
+    });
+    return total;
+  };
   
   // Calculate estimated daily consumption
   const calculateEstimatedConsumption = () => {
     const wattage = parseFloat(formData.defaultWattage) || 0;
-    const hours = parseFloat(formData.estimatedDailyHours) || 
-                  (formData.minHours && formData.maxHours 
-                    ? (parseFloat(formData.minHours) + parseFloat(formData.maxHours)) / 2 
-                    : 4);
+    
+    let hours;
+    if (formData.usageIntervals && formData.usageIntervals.length > 0) {
+      hours = calculateHoursFromIntervals(formData.usageIntervals);
+    } else {
+      hours = parseFloat(formData.estimatedDailyHours) || 
+              (formData.minHours && formData.maxHours 
+                ? (parseFloat(formData.minHours) + parseFloat(formData.maxHours)) / 2 
+                : 4);
+    }
+    
     return ((wattage * hours) / 1000).toFixed(2); // kWh
   };
   
@@ -126,7 +179,7 @@ const Appliances = () => {
 
       setShowAddModal(false);
       setEditingAppliance(null);
-      setFormData({ name: '', category: 'Lighting', defaultWattage: '', description: '', minHours: '', maxHours: '', peakUsageTime: '', estimatedDailyHours: '' });
+      setFormData({ name: '', category: 'Lighting', defaultWattage: '', description: '', minHours: '', maxHours: '', peakUsageTime: '', estimatedDailyHours: '', usageIntervals: [] });
       setShowEstimatedConsumption(false);
       setUseCustomHours(false);
     } catch (error) {
@@ -147,7 +200,8 @@ const Appliances = () => {
       minHours: appliance.usageHints?.minHours?.toString() || '',
       maxHours: appliance.usageHints?.maxHours?.toString() || '',
       peakUsageTime: appliance.usageHints?.peakUsageTime || '',
-      estimatedDailyHours: avgHours
+      estimatedDailyHours: appliance.usageHints?.estimatedDailyHours?.toString() || avgHours,
+      usageIntervals: appliance.usageHints?.usageIntervals || []
     });
     setShowEstimatedConsumption(true);
     setShowAddModal(true);
@@ -162,7 +216,7 @@ const Appliances = () => {
   const closeModal = () => {
     setShowAddModal(false);
     setEditingAppliance(null);
-    setFormData({ name: '', category: 'Lighting', defaultWattage: '', description: '', minHours: '', maxHours: '', peakUsageTime: '', estimatedDailyHours: '' });
+    setFormData({ name: '', category: 'Lighting', defaultWattage: '', description: '', minHours: '', maxHours: '', peakUsageTime: '', estimatedDailyHours: '', usageIntervals: [] });
     setShowEstimatedConsumption(false);
     setUseCustomHours(false);
   };
@@ -287,6 +341,19 @@ const Appliances = () => {
                 </div>
               )}
 
+              {appliance.usageHints?.usageIntervals && appliance.usageHints.usageIntervals.length > 0 && (
+                <div className="pt-2">
+                  <span className="text-xs font-semibold text-gray-500 uppercase block mb-1">Time Usage</span>
+                  <div className="flex flex-wrap gap-1">
+                    {appliance.usageHints.usageIntervals.map((interval, i) => (
+                      <span key={i} className="text-[10px] px-2 py-0.5 bg-green-100 text-green-800 rounded-md">
+                        {interval.startTime} - {interval.endTime}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {appliance.usageHints?.peakUsageTime && (
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-gray-600">Peak Time</span>
@@ -408,6 +475,66 @@ const Appliances = () => {
                   />
                 </div>
 
+                {/* Time Usage Intervals */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Time Usage Intervals (Optional)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={addInterval}
+                      className="text-xs text-primary-600 hover:text-primary-700 font-medium flex items-center"
+                    >
+                      <Plus size={14} className="mr-1" />
+                      Add Interval
+                    </button>
+                  </div>
+                  
+                  {formData.usageIntervals.length > 0 ? (
+                    <div className="space-y-3">
+                      {formData.usageIntervals.map((interval, index) => (
+                        <div key={index} className="flex items-center space-x-2 bg-gray-50 p-3 rounded-lg border border-gray-200">
+                          <div className="flex-1 grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-[10px] uppercase font-bold text-gray-500 mb-1">Start</label>
+                              <input
+                                type="time"
+                                value={interval.startTime}
+                                onChange={(e) => handleIntervalChange(index, 'startTime', e.target.value)}
+                                className="form-input text-sm p-1.5"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] uppercase font-bold text-gray-500 mb-1">End</label>
+                              <input
+                                type="time"
+                                value={interval.endTime}
+                                onChange={(e) => handleIntervalChange(index, 'endTime', e.target.value)}
+                                className="form-input text-sm p-1.5"
+                              />
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeInterval(index)}
+                            className="p-1.5 text-gray-400 hover:text-red-500 transition-colors mt-4"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      ))}
+                      <div className="text-right">
+                        <p className="text-xs font-medium text-primary-600">
+                          Total: {calculateHoursFromIntervals(formData.usageIntervals).toFixed(2)} hours
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-500 italic">No specific time intervals added. Using typical usage hours below.</p>
+                  )}
+                </div>
+
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -514,39 +641,48 @@ const Appliances = () => {
                     <div className="bg-white rounded-lg p-4 shadow-sm">
                       <div className="flex items-center justify-between mb-3">
                         <label className="text-sm font-medium text-gray-700">
-                          Your Estimated Daily Usage (hours)
+                          {formData.usageIntervals && formData.usageIntervals.length > 0 
+                            ? 'Calculated Daily Usage (from intervals)' 
+                            : 'Your Estimated Daily Usage (hours)'}
                         </label>
-                        <button
-                          type="button"
-                          onClick={() => setUseCustomHours(!useCustomHours)}
-                          className="text-xs text-blue-600 hover:text-blue-700 font-medium"
-                        >
-                          {useCustomHours ? 'Use Auto' : 'Customize'}
-                        </button>
+                        {(!formData.usageIntervals || formData.usageIntervals.length === 0) && (
+                          <button
+                            type="button"
+                            onClick={() => setUseCustomHours(!useCustomHours)}
+                            className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                          >
+                            {useCustomHours ? 'Use Auto' : 'Customize'}
+                          </button>
+                        )}
                       </div>
                       
                       <div className="flex items-center space-x-4">
                         <input
                           type="number"
                           name="estimatedDailyHours"
-                          value={formData.estimatedDailyHours}
+                          value={formData.usageIntervals && formData.usageIntervals.length > 0 
+                            ? calculateHoursFromIntervals(formData.usageIntervals).toFixed(2)
+                            : formData.estimatedDailyHours}
                           onChange={(e) => {
                             setUseCustomHours(true);
                             handleInputChange(e);
                           }}
-                          className="form-input flex-1"
+                          className={`form-input flex-1 ${formData.usageIntervals && formData.usageIntervals.length > 0 ? 'bg-gray-50' : ''}`}
                           placeholder="e.g., 6"
                           min="0"
                           max="24"
                           step="0.5"
+                          disabled={formData.usageIntervals && formData.usageIntervals.length > 0}
                         />
                         <span className="text-sm text-gray-600">hours/day</span>
                       </div>
                       
                       <p className="text-xs text-gray-500 mt-2">
-                        {useCustomHours 
-                          ? 'Using your custom hours for calculation' 
-                          : `Auto-calculated based on typical usage (${formData.minHours || 2}-${formData.maxHours || 8}h)`
+                        {formData.usageIntervals && formData.usageIntervals.length > 0 
+                          ? 'Automatically calculated from the time intervals provided above'
+                          : useCustomHours 
+                            ? 'Using your custom hours for calculation' 
+                            : `Auto-calculated based on typical usage (${formData.minHours || 2}-${formData.maxHours || 8}h)`
                         }
                       </p>
                     </div>

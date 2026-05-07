@@ -4,6 +4,7 @@ import Consumption from '../models/Consumption.js';
 import Appliance from '../models/Appliance.js';
 
 const router = express.Router();
+const isAdminUser = (req) => req.user?.role === 'admin';
 
 const parseTimeToMinutes = (timeString) => {
   if (!timeString || typeof timeString !== 'string' || !timeString.includes(':')) return null;
@@ -64,6 +65,7 @@ router.get('/trends', authenticate, async (req, res) => {
   try {
     const { period = '6months' } = req.query;
     const userId = req.user.id;
+    const isAdmin = isAdminUser(req);
     
     let startDate = new Date();
     switch (period) {
@@ -83,29 +85,68 @@ router.get('/trends', authenticate, async (req, res) => {
         startDate.setMonth(startDate.getMonth() - 6);
     }
 
-    const consumptionData = await Consumption.find({
-      userId,
-      submittedAt: { $gte: startDate }
-    }).sort({ year: 1, month: 1 });
+    let consumptionData = [];
+    let monthlyTrends = [];
 
-    // Process data for trends
-    const monthlyTrends = consumptionData.map(record => ({
-      month: new Date(record.year, record.month - 1).toLocaleDateString('en-US', { month: 'short' }),
-      year: record.year,
-      consumption: record.totalUnits,
-      bill: record.estimatedBill,
-      prediction: record.totalUnits * 1.05 // Simple prediction logic
-    }));
+    if (isAdmin) {
+      monthlyTrends = await Consumption.aggregate([
+        {
+          $match: {
+            submittedAt: { $gte: startDate }
+          }
+        },
+        {
+          $group: {
+            _id: { month: '$month', year: '$year' },
+            consumption: { $sum: '$totalUnits' },
+            bill: { $sum: '$estimatedBill' }
+          }
+        },
+        {
+          $project: {
+            _id: 0,
+            month: {
+              $let: {
+                vars: {
+                  months: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+                },
+                in: { $arrayElemAt: ['$$months', { $subtract: ['$_id.month', 1] }] }
+              }
+            },
+            year: '$_id.year',
+            consumption: { $round: ['$consumption', 2] },
+            bill: { $round: ['$bill', 2] },
+            prediction: { $round: [{ $multiply: ['$consumption', 1.05] }, 2] }
+          }
+        },
+        { $sort: { year: 1, month: 1 } }
+      ]);
+    } else {
+      consumptionData = await Consumption.find({
+        userId,
+        submittedAt: { $gte: startDate }
+      }).sort({ year: 1, month: 1 });
+
+      // Process data for trends
+      monthlyTrends = consumptionData.map(record => ({
+        month: new Date(record.year, record.month - 1).toLocaleDateString('en-US', { month: 'short' }),
+        year: record.year,
+        consumption: record.totalUnits,
+        bill: record.estimatedBill,
+        prediction: record.totalUnits * 1.05
+      }));
+    }
 
     res.json({
       success: true,
       data: {
         monthly: monthlyTrends,
         summary: {
-          totalConsumption: consumptionData.reduce((sum, record) => sum + record.totalUnits, 0),
-          averageMonthly: consumptionData.length > 0 ? 
-            consumptionData.reduce((sum, record) => sum + record.totalUnits, 0) / consumptionData.length : 0,
-          totalBill: consumptionData.reduce((sum, record) => sum + record.estimatedBill, 0)
+          totalConsumption: monthlyTrends.reduce((sum, record) => sum + (record.consumption || 0), 0),
+          averageMonthly: monthlyTrends.length > 0
+            ? monthlyTrends.reduce((sum, record) => sum + (record.consumption || 0), 0) / monthlyTrends.length
+            : 0,
+          totalBill: monthlyTrends.reduce((sum, record) => sum + (record.bill || 0), 0)
         }
       }
     });
@@ -122,12 +163,22 @@ router.get('/trends', authenticate, async (req, res) => {
 router.get('/peak-hours', authenticate, async (req, res) => {
   try {
     const userId = req.user.id;
-    
-    const latestConsumption = await Consumption.findOne({ userId })
-      .sort({ submittedAt: -1 })
-      .populate('appliances.applianceId');
+    const isAdmin = isAdminUser(req);
+    let consumptions = [];
 
-    if (!latestConsumption) {
+    if (isAdmin) {
+      consumptions = await Consumption.find({})
+        .sort({ submittedAt: -1 })
+        .limit(200)
+        .populate('appliances.applianceId');
+    } else {
+      const latestConsumption = await Consumption.findOne({ userId })
+        .sort({ submittedAt: -1 })
+        .populate('appliances.applianceId');
+      consumptions = latestConsumption ? [latestConsumption] : [];
+    }
+
+    if (consumptions.length === 0) {
       const empty = Array.from({ length: 24 }, (_, hour) => ({
         hour: `${hour.toString().padStart(2, '0')}:00`,
         consumption: 0
@@ -141,46 +192,71 @@ router.get('/peak-hours', authenticate, async (req, res) => {
 
     const buckets = Array.from({ length: 24 }, () => 0);
 
-    latestConsumption.appliances.forEach((appUsage) => {
-      const appliance = appUsage.applianceId;
-      if (!appliance) return;
+    consumptions.forEach((consumptionRecord) => {
+      consumptionRecord.appliances.forEach((appUsage) => {
+        const appliance = appUsage.applianceId;
+        if (!appliance) return;
 
-      const wattage = appUsage.customWattage || appliance.defaultWattage || 0;
-      const quantity = appUsage.quantity || 1;
-      if (!wattage || wattage <= 0) return;
+        const wattage = appUsage.customWattage || appliance.defaultWattage || 0;
+        const quantity = appUsage.quantity || 1;
+        if (!wattage || wattage <= 0) return;
 
-      // Monthly kWh for the appliance (based on stored dailyHours)
-      const monthlyKwh = ((wattage * (appUsage.dailyHours || 0)) / 1000) * 30 * quantity;
-      if (!Number.isFinite(monthlyKwh) || monthlyKwh <= 0) return;
+        // Monthly kWh for the appliance (based on stored dailyHours)
+        const monthlyKwh = ((wattage * (appUsage.dailyHours || 0)) / 1000) * 30 * quantity;
+        if (!Number.isFinite(monthlyKwh) || monthlyKwh <= 0) return;
 
-      // Prefer usageSlots (explicit hourly selection)
-      if (Array.isArray(appUsage.usageSlots) && appUsage.usageSlots.length > 0) {
-        const uniqSlots = [...new Set(appUsage.usageSlots)].filter((h) => Number.isInteger(h) && h >= 0 && h <= 23);
-        if (uniqSlots.length > 0) {
-          const perHour = monthlyKwh / uniqSlots.length;
-          uniqSlots.forEach((h) => {
-            buckets[h] += perHour;
+        // Prefer usageSlots (explicit hourly selection)
+        if (Array.isArray(appUsage.usageSlots) && appUsage.usageSlots.length > 0) {
+          const uniqSlots = [...new Set(appUsage.usageSlots)].filter((h) => Number.isInteger(h) && h >= 0 && h <= 23);
+          if (uniqSlots.length > 0) {
+            const perHour = monthlyKwh / uniqSlots.length;
+            uniqSlots.forEach((h) => {
+              buckets[h] += perHour;
+            });
+            return;
+          }
+        }
+
+        // Next: timeRanges (multiple start/end ranges) distribute by minute overlap
+        if (Array.isArray(appUsage.timeRanges) && appUsage.timeRanges.length > 0) {
+          const validRanges = [];
+          let totalMinutes = 0;
+
+          appUsage.timeRanges.forEach(range => {
+            const startMinutes = parseTimeToMinutes(range.start);
+            const endMinutes = parseTimeToMinutes(range.end);
+            if (startMinutes !== null && endMinutes !== null) {
+              const diff = endMinutes >= startMinutes
+                ? endMinutes - startMinutes
+                : (24 * 60 - startMinutes) + endMinutes;
+              if (diff > 0) {
+                validRanges.push({ startMinutes, endMinutes, diff });
+                totalMinutes += diff;
+              }
+            }
           });
+
+          if (totalMinutes > 0) {
+            validRanges.forEach((range) => {
+              addMinutesRangeToHourlyBuckets(
+                buckets,
+                range.startMinutes,
+                range.endMinutes,
+                monthlyKwh * (range.diff / totalMinutes)
+              );
+            });
+          }
           return;
         }
-      }
 
-      // Next: customTimeRange (single start/end) distribute by minute overlap
-      const startMinutes = parseTimeToMinutes(appUsage.customTimeRange?.start);
-      const endMinutes = parseTimeToMinutes(appUsage.customTimeRange?.end);
-      if (startMinutes !== null && endMinutes !== null) {
-        addMinutesRangeToHourlyBuckets(buckets, startMinutes, endMinutes, monthlyKwh);
-        return;
-      }
-
-      // Fallback: distribute evenly across day based on dailyHours
-      const hours = Math.max(0, Math.min(24, appUsage.dailyHours || 0));
-      if (hours <= 0) return;
-      const perHour = monthlyKwh / hours;
-      for (let h = 0; h < 24; h += 1) {
-        // naive: assume usage could happen anytime; keep distribution flat
-        buckets[h] += perHour * (hours / 24);
-      }
+        // Fallback: distribute evenly across day based on dailyHours
+        const hours = Math.max(0, Math.min(24, appUsage.dailyHours || 0));
+        if (hours <= 0) return;
+        const perHour = monthlyKwh / hours;
+        for (let h = 0; h < 24; h += 1) {
+          buckets[h] += perHour * (hours / 24);
+        }
+      });
     });
 
     const peakHoursData = buckets.map((kwh, hour) => ({
@@ -205,13 +281,27 @@ router.get('/peak-hours', authenticate, async (req, res) => {
 router.get('/comparisons', authenticate, async (req, res) => {
   try {
     const userId = req.user.id;
-    
-    // Get latest consumption record
-    const latestConsumption = await Consumption.findOne({ userId })
-      .sort({ submittedAt: -1 })
-      .populate('appliances.applianceId');
+    const isAdmin = isAdminUser(req);
+    let latestConsumption;
+    let recordsScope = [];
 
-    if (!latestConsumption) {
+    if (isAdmin) {
+      latestConsumption = await Consumption.findOne({})
+        .sort({ submittedAt: -1 })
+        .populate('appliances.applianceId');
+      recordsScope = await Consumption.find({})
+        .sort({ year: -1, month: -1 })
+        .limit(12);
+    } else {
+      latestConsumption = await Consumption.findOne({ userId })
+        .sort({ submittedAt: -1 })
+        .populate('appliances.applianceId');
+      recordsScope = await Consumption.find({ userId })
+        .sort({ year: -1, month: -1 })
+        .limit(12);
+    }
+
+    if (!latestConsumption || !Array.isArray(latestConsumption.appliances)) {
       return res.json({
         success: true,
         data: {
@@ -222,7 +312,7 @@ router.get('/comparisons', authenticate, async (req, res) => {
     }
 
     // Calculate appliance breakdown
-    const applianceBreakdown = latestConsumption.appliances.map(appliance => {
+    const applianceBreakdown = latestConsumption.appliances.filter(item => item.applianceId).map(appliance => {
       const dailyConsumption = (appliance.customWattage || appliance.applianceId.defaultWattage) * 
                               appliance.dailyHours * appliance.quantity / 1000;
       const monthlyConsumption = dailyConsumption * 30;
@@ -235,10 +325,6 @@ router.get('/comparisons', authenticate, async (req, res) => {
     }).sort((a, b) => b.consumption - a.consumption);
 
     // Seasonal data derived from consumption records (last 12 months)
-    const last12 = await Consumption.find({ userId })
-      .sort({ year: -1, month: -1 })
-      .limit(12);
-
     const seasonOfMonth = (m) => {
       // India-ish seasons for Maharashtra: Winter(Dec-Feb), Summer(Mar-May), Monsoon(Jun-Sep), Post-monsoon(Oct-Nov)
       if ([12, 1, 2].includes(m)) return 'Winter';
@@ -248,7 +334,7 @@ router.get('/comparisons', authenticate, async (req, res) => {
     };
 
     const seasonalAgg = new Map();
-    last12.forEach((rec) => {
+    recordsScope.forEach((rec) => {
       const season = seasonOfMonth(rec.month);
       const prev = seasonalAgg.get(season) || { season, consumption: 0, months: 0 };
       prev.consumption += rec.totalUnits || 0;
@@ -287,19 +373,25 @@ router.get('/comparisons', authenticate, async (req, res) => {
 router.get('/recommendations', authenticate, async (req, res) => {
   try {
     const userId = req.user.id;
-    
-    // Get user's consumption patterns
-    const recentConsumption = await Consumption.find({ userId })
-      .sort({ submittedAt: -1 })
-      .limit(3)
-      .populate('appliances.applianceId');
+    const isAdmin = isAdminUser(req);
+    const recentConsumption = isAdmin
+      ? await Consumption.find({})
+        .sort({ submittedAt: -1 })
+        .limit(20)
+        .populate('appliances.applianceId')
+      : await Consumption.find({ userId })
+        .sort({ submittedAt: -1 })
+        .limit(3)
+        .populate('appliances.applianceId');
 
     if (recentConsumption.length === 0) {
       return res.json({
         success: true,
         data: {
           score: 0,
-          recommendations: ['Start tracking your appliance usage to get personalized recommendations']
+          recommendations: [isAdmin
+            ? 'Collect more consumption submissions from users to unlock system recommendations'
+            : 'Start tracking your appliance usage to get personalized recommendations']
         }
       });
     }
@@ -312,15 +404,26 @@ router.get('/recommendations', authenticate, async (req, res) => {
     const recommendations = [];
     
     if (avgConsumption > 300) {
-      recommendations.push('Your consumption is above average. Consider upgrading to energy-efficient appliances.');
+      recommendations.push(isAdmin
+        ? 'System consumption is above baseline. Run targeted awareness campaigns for high-usage users.'
+        : 'Your consumption is above average. Consider upgrading to energy-efficient appliances.');
     }
     
-    recommendations.push(
-      'Use appliances during off-peak hours (11 PM - 6 AM) for lower tariff rates',
-      'Set air conditioner temperature to 24°C for optimal efficiency',
-      'Replace incandescent bulbs with LED lights to save up to 80% energy',
-      'Unplug electronics when not in use to avoid phantom loads'
-    );
+    if (isAdmin) {
+      recommendations.push(
+        'Promote off-peak usage to reduce evening system load',
+        'Send monthly advisory reports to top consuming regions',
+        'Review tariff slab impact on high consumption clusters',
+        'Encourage replacement of inefficient devices through incentives'
+      );
+    } else {
+      recommendations.push(
+        'Use appliances during off-peak hours (11 PM - 6 AM) for lower tariff rates',
+        'Set air conditioner temperature to 24°C for optimal efficiency',
+        'Replace incandescent bulbs with LED lights to save up to 80% energy',
+        'Unplug electronics when not in use to avoid phantom loads'
+      );
+    }
 
     res.json({
       success: true,

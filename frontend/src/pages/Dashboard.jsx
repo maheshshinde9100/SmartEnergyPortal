@@ -125,7 +125,9 @@ const Dashboard = () => {
               Welcome back, {user?.profile?.firstName}!
             </h1>
             <p className="text-primary-100 mt-1">
-              Here's your energy consumption overview for this month
+              {isAdmin
+                ? `Here's your system overview for ${dashboardData.currentMonth?.periodLabel || 'the latest period'}`
+                : "Here's your energy consumption overview for this month"}
             </p>
           </div>
           <div className="hidden sm:block">
@@ -161,12 +163,14 @@ const Dashboard = () => {
                       className={isConsumptionUp ? 'text-red-500' : 'text-green-500'} 
                     />
                     <span className={`text-sm ml-1 ${isConsumptionUp ? 'text-red-600' : 'text-green-600'}`}>
-                      {Math.abs(consumptionChange).toFixed(1)}% from last month
+                      {Math.abs(consumptionChange).toFixed(1)}% {isAdmin ? 'from previous period' : 'from last month'}
                     </span>
                   </>
                 ) : (
                   <span className="text-sm text-gray-500">
-                    {dashboardData.currentMonth?.isEstimated ? 'Based on appliances' : 'No change'}
+                    {dashboardData.currentMonth?.isEstimated
+                      ? 'Based on appliances'
+                      : (isAdmin ? 'No period-over-period change' : 'No change')}
                   </span>
                 )}
               </div>
@@ -191,9 +195,11 @@ const Dashboard = () => {
                 ₹{currentBill.toFixed(0)}
               </p>
               <p className="text-sm text-gray-500 mt-2">
-                {dashboardData.currentMonth?.isEstimated 
-                  ? 'Based on appliance usage' 
-                  : (lastBill > 0 ? `Last month: ₹${lastBill.toFixed(0)}` : 'Current month')
+                {dashboardData.currentMonth?.isEstimated
+                  ? 'Based on appliance usage'
+                  : isAdmin
+                    ? (dashboardData.currentMonth?.periodLabel || 'Latest period')
+                    : (lastBill > 0 ? `Last month: ₹${lastBill.toFixed(0)}` : 'Current month')
                 }
               </p>
             </div>
