@@ -164,12 +164,15 @@ export const getConsumptionAnalytics = async (req, res) => {
       case '1year':
         startDate.setFullYear(startDate.getFullYear() - 1);
         break;
+      case '2years':
+        startDate.setFullYear(startDate.getFullYear() - 2);
+        break;
       default:
         startDate.setMonth(startDate.getMonth() - 6);
     }
 
     // Monthly consumption trends
-    const monthlyTrends = await Consumption.aggregate([
+    let monthlyTrends = await Consumption.aggregate([
       {
         $match: {
           $or: [
@@ -200,6 +203,32 @@ export const getConsumptionAnalytics = async (req, res) => {
       },
       { $sort: { year: 1, month: 1 } }
     ]);
+
+    // Fallback: if selected window has no data, return latest available 12 months.
+    if (monthlyTrends.length === 0) {
+      monthlyTrends = await Consumption.aggregate([
+        {
+          $group: {
+            _id: { month: '$month', year: '$year' },
+            totalConsumption: { $sum: '$totalUnits' },
+            totalBill: { $sum: '$estimatedBill' },
+            userCount: { $addToSet: '$userId' }
+          }
+        },
+        {
+          $project: {
+            month: '$_id.month',
+            year: '$_id.year',
+            totalConsumption: 1,
+            totalBill: 1,
+            userCount: { $size: '$userCount' }
+          }
+        },
+        { $sort: { year: -1, month: -1 } },
+        { $limit: 12 },
+        { $sort: { year: 1, month: 1 } }
+      ]);
+    }
 
     // Regional consumption
     const regionalConsumption = await User.aggregate([
@@ -278,22 +307,8 @@ export const getConsumptionAnalytics = async (req, res) => {
 // Get system-wide predictions with advanced algorithms
 export const getSystemPredictions = async (req, res) => {
   try {
-    // Get all consumption data for the last 12 months for better prediction accuracy
-    const twelveMonthsAgo = new Date();
-    twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
-
+    // Get latest available 12 months (not strictly tied to current date window).
     const historicalData = await Consumption.aggregate([
-      {
-        $match: {
-          $or: [
-            { year: { $gt: twelveMonthsAgo.getFullYear() } },
-            { 
-              year: twelveMonthsAgo.getFullYear(),
-              month: { $gte: twelveMonthsAgo.getMonth() + 1 }
-            }
-          ]
-        }
-      },
       {
         $group: {
           _id: { month: '$month', year: '$year' },
@@ -313,8 +328,27 @@ export const getSystemPredictions = async (req, res) => {
           avgConsumptionPerUser: 1
         }
       },
+      { $sort: { year: -1, month: -1 } },
+      { $limit: 12 },
       { $sort: { year: 1, month: 1 } }
     ]);
+
+    if (historicalData.length === 1) {
+      const only = historicalData[0];
+      return res.json({
+        success: true,
+        data: {
+          nextMonth: {
+            consumption: Math.round(only.totalConsumption || 0),
+            revenue: Math.round(only.totalBill || 0),
+            users: only.userCount || 0
+          },
+          confidence: 45,
+          trend: 'stable',
+          historicalData
+        }
+      });
+    }
 
     if (historicalData.length < 2) {
       return res.json({
@@ -397,8 +431,10 @@ export const getSystemPredictions = async (req, res) => {
     );
 
     // Revenue prediction based on consumption and current tariff
-    const avgRevenuePerUnit = recentData.reduce((sum, data) => 
-      sum + (data.totalBill / data.totalConsumption), 0) / recentData.length;
+    const avgRevenuePerUnit = recentData.length > 0
+      ? recentData.reduce((sum, data) =>
+        sum + (data.totalConsumption > 0 ? (data.totalBill / data.totalConsumption) : 0), 0) / recentData.length
+      : 0;
     const predictedRevenue = combinedPrediction * avgRevenuePerUnit;
 
     // Calculate confidence based on data consistency and amount
@@ -513,9 +549,18 @@ export const getCurrentTariff = async (req, res) => {
     const currentTariff = await TariffRate.getCurrentTariff();
     
     if (!currentTariff) {
-      return res.status(404).json({
-        success: false,
-        message: 'No active tariff found'
+      return res.json({
+        success: true,
+        data: {
+          slabs: [
+            { minUnits: 0, maxUnits: 100, ratePerUnit: 3.5 },
+            { minUnits: 101, maxUnits: 300, ratePerUnit: 4.5 },
+            { minUnits: 301, maxUnits: 500, ratePerUnit: 6.0 },
+            { minUnits: 501, maxUnits: 999999, ratePerUnit: 7.5 }
+          ],
+          effectiveFrom: null,
+          description: 'Default tariff (no custom tariff configured yet)'
+        }
       });
     }
 
