@@ -100,6 +100,8 @@ export const analyticsAPI = {
   getTrends: (params) => api.get('/analytics/trends', { params }),
   getPeakHours: (params) => api.get('/analytics/peak-hours', { params }),
   getComparisons: (params) => api.get('/analytics/comparisons', { params }),
+  getRecommendations: (params) => api.get('/analytics/recommendations', { params }),
+  getPredictions: (params) => api.get('/analytics/predictions', { params }),
 };
 
 // Dashboard API
