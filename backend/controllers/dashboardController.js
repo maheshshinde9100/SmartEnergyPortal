@@ -70,8 +70,8 @@ const getUserDashboardData = async (userId) => {
     });
 
     // Calculate consumption statistics
-    const totalConsumption = consumptionRecords.reduce((sum, record) => sum + (record.totalUnits || 0), 0);
-    const totalBill = consumptionRecords.reduce((sum, record) => sum + (record.estimatedBill || 0), 0);
+    let totalConsumption = consumptionRecords.reduce((sum, record) => sum + (record.totalUnits || 0), 0);
+    let totalBill = consumptionRecords.reduce((sum, record) => sum + (record.estimatedBill || 0), 0);
 
     // Get current month consumption
     const currentDate = new Date();
@@ -106,7 +106,7 @@ const getUserDashboardData = async (userId) => {
     }));
 
     // Calculate average monthly consumption
-    const averageConsumption = consumptionRecords.length > 0
+    let averageConsumption = consumptionRecords.length > 0
         ? totalConsumption / consumptionRecords.length
         : 0;
 
@@ -139,6 +139,22 @@ const getUserDashboardData = async (userId) => {
             const monthlyUsage = dailyUsage * 30;
             estimatedMonthlyConsumption += monthlyUsage;
         });
+        
+        // If history is empty, use projections for statistics to avoid showing 0
+        if (consumptionRecords.length === 0 && estimatedMonthlyConsumption > 0) {
+            const currentTariff = await TariffRate.getCurrentTariff();
+            let projectedBill = 0;
+            if (currentTariff) {
+                projectedBill = currentTariff.calculateBill(estimatedMonthlyConsumption);
+            } else {
+                projectedBill = estimatedMonthlyConsumption * 5.5;
+            }
+
+            // Populate these so the UI reflects the current configuration
+            averageConsumption = estimatedMonthlyConsumption;
+            totalConsumption = estimatedMonthlyConsumption;
+            totalBill = projectedBill;
+        }
         
         // Calculate estimated bill using tariff slabs
         if (estimatedMonthlyConsumption > 0) {
@@ -231,13 +247,53 @@ const getAdminDashboardData = async () => {
     const previousPeriod = monthlySummary[1] || null;
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-    const systemConsumption = latestPeriod?.totalUnits || 0;
-    const systemRevenue = latestPeriod?.totalBill || 0;
-    const activeUsersThisMonth = latestPeriod?.activeUsers || 0;
+    // Calculate system-wide projected consumption from custom appliances
+    const customAppliancesStats = await Appliance.aggregate([
+        { $match: { isCustom: true, isActive: true } },
+        { $group: {
+            _id: null,
+            totalProjectedUnits: { 
+              $sum: { 
+                $divide: [
+                  { $multiply: ['$defaultWattage', { $ifNull: ['$usageHints.estimatedDailyHours', 4] }, 30] },
+                  1000
+                ]
+              } 
+            }
+        }}
+    ]);
+
+    const projectedUnits = customAppliancesStats[0]?.totalProjectedUnits || 0;
+    const historicalUnits = latestPeriod?.totalUnits || 0;
+    const currentRecordsUnits = latestPeriod?.totalUnits || 0;
+    
+    // Prefer projection if it's higher than the latest historical period (handles new appliances)
+    const systemConsumption = Math.max(currentRecordsUnits, projectedUnits, historicalUnits);
+    let systemRevenue = latestPeriod?.totalBill || 0;
+
+    console.log('📊 Admin Dashboard Logic:', {
+        projectedUnits,
+        historicalUnits,
+        currentRecordsUnits,
+        selectedConsumption: systemConsumption,
+        initialRevenue: systemRevenue
+    });
+
+    // Estimate revenue if we are using projected units or if revenue is missing
+    if (systemConsumption > historicalUnits || (systemConsumption > 0 && systemRevenue === 0)) {
+        const currentTariff = await TariffRate.getCurrentTariff();
+        if (currentTariff) {
+            systemRevenue = currentTariff.calculateBill(systemConsumption);
+        } else {
+            systemRevenue = systemConsumption * 5.5;
+        }
+    }
+
+    const activeUsersThisMonth = Math.max(latestPeriod?.activeUsers || 0, activeUsers);
     const previousConsumption = previousPeriod?.totalUnits || 0;
     const monthlyGrowth = previousConsumption > 0
         ? ((systemConsumption - previousConsumption) / previousConsumption) * 100
-        : 0;
+        : 100;
 
     // Get recent user registrations (last 30 days)
     const thirtyDaysAgo = new Date();

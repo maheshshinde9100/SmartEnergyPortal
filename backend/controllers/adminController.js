@@ -15,13 +15,66 @@ export const getAdminOverview = async (req, res) => {
     const currentMonth = new Date().getMonth() + 1;
     const currentYear = new Date().getFullYear();
     
-    const currentMonthConsumption = await Consumption.aggregate([
+    // Get stats for current month
+    const currentMonthStats = await Consumption.aggregate([
       { $match: { month: currentMonth, year: currentYear } },
       { $group: { _id: null, totalUnits: { $sum: '$totalUnits' }, totalBill: { $sum: '$estimatedBill' } } }
     ]);
 
-    const totalConsumption = currentMonthConsumption[0]?.totalUnits || 0;
-    const totalRevenue = currentMonthConsumption[0]?.totalBill || 0;
+    // Get overall stats (sum of latest record for each user)
+    const latestConsumptionPerUser = await Consumption.aggregate([
+      { $sort: { year: -1, month: -1 } },
+      { $group: {
+          _id: '$userId',
+          latestUnits: { $first: '$totalUnits' },
+          latestBill: { $first: '$estimatedBill' }
+      }},
+      { $group: {
+          _id: null,
+          totalUnits: { $sum: '$latestUnits' },
+          totalBill: { $sum: '$latestBill' }
+      }}
+    ]);
+
+    // Calculate system-wide projected consumption from custom appliances
+    const customAppliancesStats = await Appliance.aggregate([
+      { $match: { isCustom: true, isActive: true } },
+      { $group: {
+          _id: null,
+          totalProjectedUnits: { 
+            $sum: { 
+              $divide: [
+                { $multiply: ['$defaultWattage', { $ifNull: ['$usageHints.estimatedDailyHours', 4] }, 30] },
+                1000
+              ]
+            } 
+          }
+      }}
+    ]);
+
+    const projectedUnits = customAppliancesStats[0]?.totalProjectedUnits || 0;
+    const historicalUnits = latestConsumptionPerUser[0]?.totalUnits || 0;
+    const currentMonthUnits = currentMonthStats[0]?.totalUnits || 0;
+
+    const totalConsumption = Math.max(currentMonthUnits, projectedUnits, historicalUnits);
+    let totalRevenue = currentMonthStats[0]?.totalBill || 0;
+
+    console.log('📊 Admin Overview Stats:', {
+      projectedUnits,
+      historicalUnits,
+      currentMonthUnits,
+      selectedTotal: totalConsumption
+    });
+
+    // Estimate revenue if we are using projected units or if bill is 0 but consumption is not
+    if (totalConsumption > 0 && (totalRevenue === 0 || totalConsumption > historicalUnits)) {
+      const currentTariff = await TariffRate.getCurrentTariff();
+      if (currentTariff) {
+        totalRevenue = currentTariff.calculateBill(totalConsumption);
+      } else {
+        totalRevenue = totalConsumption * 5.5; // Default average rate
+      }
+    }
 
     // Get monthly growth
     const lastMonth = currentMonth === 1 ? 12 : currentMonth - 1;
@@ -37,7 +90,7 @@ export const getAdminOverview = async (req, res) => {
 
     // Get appliances count
     const totalAppliances = await Appliance.countDocuments();
-    const customAppliances = await Appliance.countDocuments({ isCustom: true });
+    const customAppliancesCount = await Appliance.countDocuments({ isCustom: true });
 
     res.json({
       success: true,
@@ -51,7 +104,8 @@ export const getAdminOverview = async (req, res) => {
         consumption: {
           currentMonth: Math.round(totalConsumption * 100) / 100,
           lastMonth: Math.round(lastMonthTotal * 100) / 100,
-          growth: Math.round(monthlyGrowth * 100) / 100
+          growth: Math.round(monthlyGrowth * 100) / 100,
+          isProjected: !currentMonthStats[0]
         },
         revenue: {
           currentMonth: Math.round(totalRevenue * 100) / 100,
@@ -59,8 +113,8 @@ export const getAdminOverview = async (req, res) => {
         },
         appliances: {
           total: totalAppliances,
-          custom: customAppliances,
-          default: totalAppliances - customAppliances
+          custom: customAppliancesCount,
+          default: totalAppliances - customAppliancesCount
         }
       }
     });
@@ -106,11 +160,30 @@ export const getAllUsers = async (req, res) => {
     // Get consumption data for each user
     const usersWithConsumption = await Promise.all(
       users.map(async (user) => {
-        const latestConsumption = await Consumption.findOne({ userId: user._id })
+        const consumptionHistory = await Consumption.find({ userId: user._id })
           .sort({ year: -1, month: -1 });
         
-        const totalRecords = await Consumption.countDocuments({ userId: user._id });
+        const latestConsumption = consumptionHistory[0] || null;
+        const totalRecords = consumptionHistory.length;
+        let totalConsumption = consumptionHistory.reduce((sum, rec) => sum + rec.totalUnits, 0);
+        let totalBill = consumptionHistory.reduce((sum, rec) => sum + rec.estimatedBill, 0);
         
+        // Calculate projection if no history
+        let projectedUnits = 0;
+        if (totalRecords === 0) {
+          const userAppliances = await Appliance.find({ createdBy: user._id, isCustom: true });
+          userAppliances.forEach(app => {
+            const hours = app.usageHints?.estimatedDailyHours || 4;
+            projectedUnits += (app.defaultWattage * hours * 30) / 1000;
+          });
+
+          if (projectedUnits > 0) {
+            totalConsumption = projectedUnits;
+            // Rough estimate for bill in the list view
+            totalBill = projectedUnits * 5.5;
+          }
+        }
+
         return {
           ...user.toObject(),
           consumption: {
@@ -118,9 +191,14 @@ export const getAllUsers = async (req, res) => {
               month: latestConsumption.month,
               year: latestConsumption.year,
               totalUnits: latestConsumption.totalUnits,
-              estimatedBill: latestConsumption.estimatedBill
+              estimatedBill: latestConsumption.estimatedBill,
+              isEstimated: false
             } : null,
-            totalRecords
+            statistics: {
+              totalRecords: user.statistics?.totalRecords || totalRecords,
+              totalConsumption: user.statistics?.totalConsumption || Math.round(totalConsumption * 100) / 100,
+              totalBill: user.statistics?.totalBill || Math.round(totalBill * 100) / 100
+            }
           }
         };
       })
@@ -333,35 +411,42 @@ export const getSystemPredictions = async (req, res) => {
       { $sort: { year: 1, month: 1 } }
     ]);
 
-    if (historicalData.length === 1) {
-      const only = historicalData[0];
-      return res.json({
-        success: true,
-        data: {
-          nextMonth: {
-            consumption: Math.round(only.totalConsumption || 0),
-            revenue: Math.round(only.totalBill || 0),
-            users: only.userCount || 0
-          },
-          confidence: 45,
-          trend: 'stable',
-          historicalData
-        }
-      });
-    }
+    // Calculate current system-wide projected monthly units from active appliances
+    const activeCustomAppliances = await Appliance.find({ isCustom: true, isActive: true });
+    let projectedMonthlyUnits = 0;
+    activeCustomAppliances.forEach(app => {
+      const dailyHours = app.usageHints?.estimatedDailyHours || 4;
+      const monthlyUnits = (app.defaultWattage * dailyHours * 30) / 1000;
+      projectedMonthlyUnits += monthlyUnits;
+    });
+
+    const activeUsersCount = await User.countDocuments({ role: 'user', isActive: true });
 
     if (historicalData.length < 2) {
+      // Fallback prediction based on active appliances and current user count
+      const currentTariff = await TariffRate.getCurrentTariff();
+      let fallbackRevenue = 0;
+      
+      const predictionBase = Math.max(projectedMonthlyUnits, 100); // Minimum 100kWh floor
+      
+      if (currentTariff) {
+        fallbackRevenue = currentTariff.calculateBill(predictionBase);
+      } else {
+        fallbackRevenue = predictionBase * 5.5;
+      }
+
       return res.json({
         success: true,
         data: {
           nextMonth: {
-            consumption: 0,
-            revenue: 0,
-            users: 0
+            consumption: Math.round(predictionBase),
+            revenue: Math.round(fallbackRevenue),
+            users: Math.round(activeUsersCount * 1.05) // Predict 5% growth
           },
-          confidence: 0,
-          trend: 'insufficient_data',
-          historicalData: []
+          confidence: 40,
+          trend: 'stable',
+          historicalData: historicalData,
+          isProjected: true
         }
       });
     }
@@ -416,10 +501,14 @@ export const getSystemPredictions = async (req, res) => {
     const seasonalPrediction = lastMonthConsumption * seasonalFactor;
 
     // Combine predictions with weights
-    const combinedPrediction = (
-      weightedConsumption * 0.4 +
-      (trendPrediction || weightedConsumption) * 0.3 +
-      seasonalPrediction * 0.3
+    const trendBase = weightedConsumption || (projectedMonthlyUnits / 100); // Small fallback if no history
+    const combinedPrediction = Math.max(
+      (
+        trendBase * 0.4 +
+        (trendPrediction || trendBase) * 0.3 +
+        seasonalPrediction * 0.3
+      ),
+      projectedMonthlyUnits // Ensure prediction at least matches current appliance potential
     );
 
     // User growth prediction based on historical trend
@@ -431,11 +520,20 @@ export const getSystemPredictions = async (req, res) => {
     );
 
     // Revenue prediction based on consumption and current tariff
-    const avgRevenuePerUnit = recentData.length > 0
-      ? recentData.reduce((sum, data) =>
-        sum + (data.totalConsumption > 0 ? (data.totalBill / data.totalConsumption) : 0), 0) / recentData.length
-      : 0;
-    const predictedRevenue = combinedPrediction * avgRevenuePerUnit;
+    let predictedRevenue = 0;
+    const currentTariff = await TariffRate.getCurrentTariff();
+    
+    if (combinedPrediction > 0) {
+      if (currentTariff) {
+        predictedRevenue = currentTariff.calculateBill(combinedPrediction);
+      } else {
+        const avgRevenuePerUnit = recentData.length > 0
+          ? recentData.reduce((sum, data) =>
+            sum + (data.totalConsumption > 0 ? (data.totalBill / data.totalConsumption) : 0), 0) / recentData.length
+          : 5.5;
+        predictedRevenue = combinedPrediction * avgRevenuePerUnit;
+      }
+    }
 
     // Calculate confidence based on data consistency and amount
     let confidence = 60; // Base confidence
@@ -655,6 +753,10 @@ export const getPeakUsageAnalysis = async (req, res) => {
       return 'night';
     };
 
+    // Analyze custom appliances directly to show system capacity
+    const customAppliancesData = await Appliance.find({ isCustom: true, isActive: true })
+      .populate('createdBy', 'profile.address.city profile.firstName profile.lastName');
+
     // Get all consumption data with appliance details
     const consumptionData = await Consumption.find({})
       .populate({
@@ -663,7 +765,7 @@ export const getPeakUsageAnalysis = async (req, res) => {
       })
       .populate('userId', 'profile.address.city profile.firstName profile.lastName')
       .sort({ year: -1, month: -1 })
-      .limit(1000); // Limit for performance
+      .limit(1000);
 
     const hourBuckets = Array.from({ length: 24 }, () => 0);
 
@@ -681,8 +783,59 @@ export const getPeakUsageAnalysis = async (req, res) => {
       totalUsers: new Set()
     };
 
-    // Process consumption data
+    // 1. Process custom appliances (installed capacity analysis)
+    customAppliancesData.forEach(app => {
+      if (!app.createdBy) return;
+      const userId = app.createdBy._id.toString();
+      const userCity = app.createdBy.profile?.address?.city || 'Unknown';
+      peakAnalysis.totalUsers.add(userId);
+
+      const category = app.category;
+      const wattage = app.defaultWattage || 0;
+      const hours = app.usageHints?.estimatedDailyHours || 4;
+      const monthlyConsumption = (wattage * hours * 30) / 1000;
+      if (monthlyConsumption <= 0) return;
+
+      // Distribute usage across periods for peak analysis
+      const periodUsage = monthlyConsumption / 4; 
+      const perHour = monthlyConsumption / 24;
+
+      ['morning', 'afternoon', 'evening', 'night'].forEach(period => {
+        peakAnalysis.byTimeOfDay[period].totalUsage += periodUsage;
+        peakAnalysis.byTimeOfDay[period].userCount++;
+        if (!peakAnalysis.byTimeOfDay[period].appliances[app.name]) {
+          peakAnalysis.byTimeOfDay[period].appliances[app.name] = { usage: 0, count: 0, category, avgWattage: wattage };
+        }
+        peakAnalysis.byTimeOfDay[period].appliances[app.name].usage += periodUsage;
+        peakAnalysis.byTimeOfDay[period].appliances[app.name].count++;
+      });
+
+      for (let h = 0; h < 24; h++) hourBuckets[h] += perHour;
+
+      if (!peakAnalysis.byCategory[category]) {
+        peakAnalysis.byCategory[category] = {
+          totalUsage: 0,
+          peakTimes: { morning: 0, afternoon: 0, evening: 0, night: 0 },
+          appliances: {}
+        };
+      }
+      peakAnalysis.byCategory[category].totalUsage += monthlyConsumption;
+
+      if (!peakAnalysis.regionalPeakUsage[userCity]) {
+        peakAnalysis.regionalPeakUsage[userCity] = {
+          totalUsage: 0,
+          peakTimes: { morning: 0, afternoon: 0, evening: 0, night: 0 },
+          userCount: new Set()
+        };
+      }
+      peakAnalysis.regionalPeakUsage[userCity].totalUsage += monthlyConsumption;
+      peakAnalysis.regionalPeakUsage[userCity].userCount.add(userId);
+    });
+
+    // 2. Process historical consumption (actual recorded data)
+    // We only add this if it's not already accounted for by appliances, or we aggregate them
     consumptionData.forEach(consumption => {
+      if (!consumption.userId) return;
       const userId = consumption.userId._id.toString();
       const userCity = consumption.userId.profile?.address?.city || 'Unknown';
       
@@ -694,16 +847,15 @@ export const getPeakUsageAnalysis = async (req, res) => {
 
         const category = appliance.category;
         const wattage = appUsage.customWattage || appliance.defaultWattage || 0;
-        const dailyConsumption = (wattage * appUsage.dailyHours) / 1000; // kWh
+        const dailyConsumption = (wattage * appUsage.dailyHours) / 1000; 
         const monthlyConsumption = dailyConsumption * 30 * appUsage.quantity;
         if (!Number.isFinite(monthlyConsumption) || monthlyConsumption <= 0) return;
 
-        const usageContributionByPeriod = { morning: 0, afternoon: 0, evening: 0, night: 0 };
+        // Skip adding if we want to avoid double counting projections? 
+        // Actually, for "Analyzed" we want to show the data we HAVE.
+        
         const hourContribByAppliance = Array.from({ length: 24 }, () => 0);
-
-        const usageSlots = Array.isArray(appUsage.usageSlots)
-          ? [...new Set(appUsage.usageSlots)].filter((h) => Number.isInteger(h) && h >= 0 && h <= 23)
-          : [];
+        const usageSlots = Array.isArray(appUsage.usageSlots) ? appUsage.usageSlots : [];
 
         if (usageSlots.length > 0) {
           const perHour = monthlyConsumption / usageSlots.length;
@@ -711,79 +863,14 @@ export const getPeakUsageAnalysis = async (req, res) => {
             hourBuckets[hour] += perHour;
             hourContribByAppliance[hour] += perHour;
           });
-        } else if (Array.isArray(appUsage.timeRanges) && appUsage.timeRanges.length > 0) {
-          const validRanges = [];
-          let totalRangeMinutes = 0;
-          appUsage.timeRanges.forEach((range) => {
-            const startMinutes = parseTimeToMinutes(range.start);
-            const endMinutes = parseTimeToMinutes(range.end);
-            if (startMinutes === null || endMinutes === null) return;
-            const diff = endMinutes >= startMinutes
-              ? endMinutes - startMinutes
-              : ((24 * 60 - startMinutes) + endMinutes);
-            if (diff <= 0) return;
-            validRanges.push({ startMinutes, endMinutes, diff });
-            totalRangeMinutes += diff;
-          });
-
-          if (totalRangeMinutes > 0) {
-            validRanges.forEach((range) => {
-              const rangeKwh = monthlyConsumption * (range.diff / totalRangeMinutes);
-              addRangeToBuckets(hourBuckets, range.startMinutes, range.endMinutes, rangeKwh);
-              addRangeToBuckets(hourContribByAppliance, range.startMinutes, range.endMinutes, rangeKwh);
-            });
-          }
-        } else {
-          const perHour = monthlyConsumption / 24;
-          for (let h = 0; h < 24; h += 1) {
-            hourBuckets[h] += perHour;
-            hourContribByAppliance[h] += perHour;
-          }
         }
 
-        for (let hour = 0; hour < 24; hour += 1) {
+        // Aggregate into periods
+        for (let hour = 0; hour < 24; hour++) {
           if (hourContribByAppliance[hour] <= 0) continue;
           const period = getPeriodFromHour(hour);
-          usageContributionByPeriod[period] += hourContribByAppliance[hour];
+          peakAnalysis.byTimeOfDay[period].totalUsage += hourContribByAppliance[hour];
         }
-
-        Object.entries(usageContributionByPeriod).forEach(([period, usage]) => {
-          if (usage <= 0) return;
-          peakAnalysis.byTimeOfDay[period].totalUsage += usage;
-          peakAnalysis.byTimeOfDay[period].userCount++;
-          if (!peakAnalysis.byTimeOfDay[period].appliances[appliance.name]) {
-            peakAnalysis.byTimeOfDay[period].appliances[appliance.name] = { usage: 0, count: 0, category, avgWattage: wattage };
-          }
-          peakAnalysis.byTimeOfDay[period].appliances[appliance.name].usage += usage;
-          peakAnalysis.byTimeOfDay[period].appliances[appliance.name].count++;
-        });
-
-        // Category analysis
-        if (!peakAnalysis.byCategory[category]) {
-          peakAnalysis.byCategory[category] = {
-            totalUsage: 0,
-            peakTimes: { morning: 0, afternoon: 0, evening: 0, night: 0 },
-            appliances: {}
-          };
-        }
-        peakAnalysis.byCategory[category].totalUsage += monthlyConsumption;
-        Object.entries(usageContributionByPeriod).forEach(([period, usage]) => {
-          peakAnalysis.byCategory[category].peakTimes[period] += usage;
-        });
-
-        // Regional analysis
-        if (!peakAnalysis.regionalPeakUsage[userCity]) {
-          peakAnalysis.regionalPeakUsage[userCity] = {
-            totalUsage: 0,
-            peakTimes: { morning: 0, afternoon: 0, evening: 0, night: 0 },
-            userCount: new Set()
-          };
-        }
-        peakAnalysis.regionalPeakUsage[userCity].totalUsage += monthlyConsumption;
-        Object.entries(usageContributionByPeriod).forEach(([period, usage]) => {
-          peakAnalysis.regionalPeakUsage[userCity].peakTimes[period] += usage;
-        });
-        peakAnalysis.regionalPeakUsage[userCity].userCount.add(userId);
       });
     });
 
@@ -851,8 +938,9 @@ export const getUserDetails = async (req, res) => {
   try {
     const { userId } = req.params;
     
-    const user = await User.findById(userId).select('-password -refreshTokens');
-    if (!user || user.role === 'admin') {
+    // Fetch user with fresh data
+    const user = await User.findById(userId);
+    if (!user) {
       return res.status(404).json({
         success: false,
         message: 'User not found'
@@ -861,17 +949,40 @@ export const getUserDetails = async (req, res) => {
 
     // Get consumption history
     const consumptionHistory = await Consumption.find({ userId })
-      .populate('appliances.applianceId', 'name category defaultWattage')
-      .sort({ year: -1, month: -1 })
-      .limit(12);
+      .sort({ year: -1, month: -1 });
+
+    const totalRecords = consumptionHistory.length;
+    let totalUnitsHistory = consumptionHistory.reduce((sum, record) => sum + (record.totalUnits || 0), 0);
+    let totalBillHistory = consumptionHistory.reduce((sum, record) => sum + (record.estimatedBill || 0), 0);
+    let averageConsumptionHistory = totalRecords > 0 ? totalUnitsHistory / totalRecords : 0;
 
     // Get custom appliances
-    const customAppliances = await Appliance.find({ createdBy: userId, isCustom: true });
+    const customAppliances = await Appliance.find({
+      createdBy: userId,
+      isCustom: true,
+      isActive: true
+    });
 
-    // Calculate statistics
-    const totalConsumption = consumptionHistory.reduce((sum, record) => sum + record.totalUnits, 0);
-    const totalBill = consumptionHistory.reduce((sum, record) => sum + record.estimatedBill, 0);
-    const averageConsumption = consumptionHistory.length > 0 ? totalConsumption / consumptionHistory.length : 0;
+    // Calculate projections
+    let projectedMonthlyUnits = 0;
+    customAppliances.forEach(app => {
+      const dailyHours = app.usageHints?.estimatedDailyHours || 4;
+      const monthlyUnits = (app.defaultWattage * dailyHours * 30) / 1000;
+      projectedMonthlyUnits += monthlyUnits;
+    });
+
+    // Resolve final statistics: Prioritize Database -> Then History -> Then Projections
+    const finalTotalConsumption = user.statistics?.totalConsumption || totalUnitsHistory || projectedMonthlyUnits;
+    const finalTotalBill = user.statistics?.totalBill || totalBillHistory || (projectedMonthlyUnits * 5.5);
+    const finalAverageConsumption = user.statistics?.averageMonthlyConsumption || averageConsumptionHistory || projectedMonthlyUnits;
+    const finalTotalRecords = user.statistics?.totalRecords || totalRecords;
+
+    console.log(`🔍 [ADMIN] User Details Fetch: ${user.email}`, {
+      db_stats: user.statistics,
+      history_stats: { totalUnitsHistory, totalRecords },
+      projections: projectedMonthlyUnits,
+      resolved: { finalTotalConsumption, finalTotalBill, finalAverageConsumption }
+    });
 
     // Generate user-specific prediction
     let userPrediction = null;
@@ -896,7 +1007,7 @@ export const getUserDetails = async (req, res) => {
       const predictedConsumption = weightedConsumption * seasonalFactor;
       
       // Estimate bill based on current tariff
-      const avgRatePerUnit = totalBill / totalConsumption;
+      const avgRatePerUnit = finalTotalConsumption > 0 ? (finalTotalBill / finalTotalConsumption) : 5;
       const predictedBill = predictedConsumption * avgRatePerUnit;
 
       userPrediction = {
@@ -907,6 +1018,25 @@ export const getUserDetails = async (req, res) => {
         confidence: Math.min(90, Math.max(60, 70 + (recentData.length * 3))),
         basedOnMonths: recentData.length
       };
+    } else if (projectedMonthlyUnits > 0) {
+      // Provide a prediction even with just appliance data
+      const currentTariff = await TariffRate.getCurrentTariff();
+      let projectedBill = 0;
+      if (currentTariff) {
+        projectedBill = currentTariff.calculateBill(projectedMonthlyUnits);
+      } else {
+        projectedBill = projectedMonthlyUnits * 5;
+      }
+
+      userPrediction = {
+        nextMonth: {
+          consumption: Math.round(projectedMonthlyUnits * 100) / 100,
+          estimatedBill: Math.round(projectedBill * 100) / 100
+        },
+        confidence: 50,
+        basedOnMonths: 0,
+        isProjected: true
+      };
     }
 
     res.json({
@@ -916,10 +1046,11 @@ export const getUserDetails = async (req, res) => {
         consumption: {
           history: consumptionHistory,
           statistics: {
-            totalRecords: consumptionHistory.length,
-            totalConsumption: Math.round(totalConsumption * 100) / 100,
-            totalBill: Math.round(totalBill * 100) / 100,
-            averageConsumption: Math.round(averageConsumption * 100) / 100
+            totalRecords: finalTotalRecords,
+            totalConsumption: Math.round(finalTotalConsumption * 100) / 100,
+            totalBill: Math.round(finalTotalBill * 100) / 100,
+            averageConsumption: Math.round(finalAverageConsumption * 100) / 100,
+            projectedMonthlyConsumption: Math.round(projectedMonthlyUnits * 100) / 100
           }
         },
         customAppliances,

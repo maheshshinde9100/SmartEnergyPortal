@@ -123,6 +123,28 @@ const userSchema = new mongoose.Schema({
       type: String,
       default: 'Asia/Kolkata'
     }
+  },
+  statistics: {
+    totalConsumption: {
+      type: Number,
+      default: 0
+    },
+    totalBill: {
+      type: Number,
+      default: 0
+    },
+    averageMonthlyConsumption: {
+      type: Number,
+      default: 0
+    },
+    totalRecords: {
+      type: Number,
+      default: 0
+    },
+    lastUpdated: {
+      type: Date,
+      default: Date.now
+    }
   }
 }, {
   timestamps: true,
