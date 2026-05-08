@@ -1,4 +1,5 @@
 import Appliance from '../models/Appliance.js';
+import { updateUserStatistics } from '../utils/statsUpdater.js';
 
 const sanitizeUsageIntervals = (usageIntervals) => {
   if (!Array.isArray(usageIntervals)) return [];
@@ -105,6 +106,9 @@ export const createAppliance = async (req, res) => {
     await appliance.save();
     await appliance.populate('createdBy', 'profile.firstName profile.lastName');
 
+    // Trigger statistics update
+    await updateUserStatistics(userId);
+
     res.status(201).json({
       success: true,
       message: 'Appliance created successfully',
@@ -162,6 +166,9 @@ export const updateAppliance = async (req, res) => {
     await appliance.save();
     await appliance.populate('createdBy', 'profile.firstName profile.lastName');
 
+    // Trigger statistics update
+    await updateUserStatistics(userId);
+
     res.json({
       success: true,
       message: 'Appliance updated successfully',
@@ -195,6 +202,9 @@ export const deleteAppliance = async (req, res) => {
     }
 
     await appliance.deleteOne();
+
+    // Trigger statistics update
+    await updateUserStatistics(userId);
 
     res.json({
       success: true,
